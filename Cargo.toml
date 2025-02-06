@@ -1,0 +1,37 @@
+[package]
+name = "styrolite"
+description = "Lightweight, programmatic sandboxing tool"
+license = "Apache-2.0"
+version = "0.1.0"
+homepage = "https://github.com/edera-dev/styrolite"
+repository = "https://github.com/edera-dev/styrolite"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+anyhow = "1.0.95"
+env_logger = "0.11.6"
+libc = "0.2.169"
+log = "0.4.25"
+mktemp-rs = "0.2.0"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+tokio = { version = "1.43.0", optional = true }
+
+[features]
+async = ["dep:tokio"]
+
+[lib]
+name = "styrolite"
+
+[[bin]]
+name = "styrolite"
+path = "bin/styrolite.rs"
+
+[[example]]
+name = "styrolite-rundir"
+path = "examples/rundir.rs"
+
+[[example]]
+name = "styrolite-attach"
+path = "examples/attach.rs"
