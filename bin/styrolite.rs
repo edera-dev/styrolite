@@ -1,8 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
-use styrolite::config::{Config, Wrappable};
 use env_logger::Env;
+use styrolite::config::{Config, Wrappable};
 
 fn main() -> Result<()> {
     let config_path = env::args().nth(1).expect("config file path missing");
