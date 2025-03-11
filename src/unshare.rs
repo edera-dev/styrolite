@@ -3,7 +3,7 @@ use std::io;
 use anyhow::Result;
 use libc;
 
-use crate::namespace::{to_clone_flags, Namespace};
+use crate::namespace::{Namespace, to_clone_flags};
 
 /// Fork the current process namespace set into a new set of namespaces.
 pub fn unshare<'x>(iter: impl IntoIterator<Item = &'x Namespace>) -> Result<()> {

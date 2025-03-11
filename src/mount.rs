@@ -1,9 +1,9 @@
 use std::env;
-use std::ffi::{c_ulong, CString};
+use std::ffi::{CString, c_ulong};
 use std::fs;
 use std::ptr;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use libc;
 
 use crate::config::{MountSpec, Mountable};

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use libc::{gid_t, pid_t, uid_t};
 use mktemp::TempFile;
 

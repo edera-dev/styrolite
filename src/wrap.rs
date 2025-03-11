@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process;
 use std::ptr;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, warn};
 
 use crate::cgroup::CGroup;

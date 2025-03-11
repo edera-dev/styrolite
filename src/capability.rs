@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use libc::syscall;
 
 const _LINUX_CAPABILITY_VERSION_3: u32 = 0x20080522;
