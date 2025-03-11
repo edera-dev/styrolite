@@ -5,8 +5,7 @@ license = "Apache-2.0"
 version = "0.1.0"
 homepage = "https://github.com/edera-dev/styrolite"
 repository = "https://github.com/edera-dev/styrolite"
-edition = "2021"
-resolver = "2"
+edition = "2024"
 
 [dependencies]
 anyhow = "1.0.95"

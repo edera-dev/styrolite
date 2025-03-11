@@ -61,10 +61,10 @@ pub fn get_caps() -> Result<CapResult> {
 
     capget(&mut iresult)?;
 
-    let effective = (iresult.data[0].effective as u64) << 32 | iresult.data[1].effective as u64;
-    let permitted = (iresult.data[0].permitted as u64) << 32 | iresult.data[1].permitted as u64;
+    let effective = ((iresult.data[0].effective as u64) << 32) | iresult.data[1].effective as u64;
+    let permitted = ((iresult.data[0].permitted as u64) << 32) | iresult.data[1].permitted as u64;
     let inheritable =
-        (iresult.data[0].inheritable as u64) << 32 | iresult.data[1].inheritable as u64;
+        ((iresult.data[0].inheritable as u64) << 32) | iresult.data[1].inheritable as u64;
 
     let finalresult = CapResult {
         effective,
