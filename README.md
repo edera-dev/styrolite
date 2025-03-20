@@ -1,4 +1,9 @@
-# styrolite
+<p align="center">
+
+<img src="assets/logo.png" alt="styrolite logo" width="200" height="200" />
+<h1 align="center">styrolite</h1>
+
+</p>
 
 Styrolite provides a programmable sandboxing tool for workloads.
 
