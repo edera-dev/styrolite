@@ -89,7 +89,7 @@ impl AttachRequestBuilder {
 
 #[derive(Default, Debug)]
 pub struct CreateRequestBuilder {
-    // The configuration object being constructed.
+    /// The configuration object being constructed.
     config: CreateRequest,
 }
 
@@ -284,8 +284,8 @@ impl Runner {
         Ok(command)
     }
 
-    // Run the specified container.
-    // Returns exit code on success, else error.
+    /// Run the specified container.
+    /// Returns exit code on success, else error.
     pub fn run<T: Configurable>(&self, config: T) -> Result<i32> {
         let mut config_file = TempFile::new("litewrap-cfg-", ".json")?;
         self.write_config(config, &mut config_file)?;

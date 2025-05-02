@@ -8,21 +8,25 @@ use crate::namespace::Namespace;
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct AttachRequest {
-    // The PID to join in the namespace.
+    /// The PID to join in the namespace.
     pub pid: pid_t,
-    // The executable specification for the new process created in this
-    // container.
+    
+    /// The executable specification for the new process created in this
+    /// container.
     pub exec: ExecutableSpec,
-    // An opaque string which is used to designate workload identity.
-    // In the case of attaching to a pre-existing container, it should be
-    // the UUID of the target container.
-    // If this is unset, then we will not correlate resource usage from
-    // the attached process with the rest of the resource usage of the
-    // container.
+    
+    /// An opaque string which is used to designate workload identity.
+    /// In the case of attaching to a pre-existing container, it should be
+    /// the UUID of the target container.
+    /// If this is unset, then we will not correlate resource usage from
+    /// the attached process with the rest of the resource usage of the
+    /// container.
     pub workload_id: Option<String>,
-    // An optional path to a cgroup2 filesystem to attach to. See
-    // CreateRequest::cgroupfs for a more detailed explanation.
+    
+    /// An optional path to a cgroup2 filesystem to attach to. See
+    /// CreateRequest::cgroupfs for a more detailed explanation.
     pub cgroupfs: Option<String>,
+    
     /// A set of namespaces to join.
     pub namespaces: Option<Vec<Namespace>>,
 }
@@ -31,70 +35,89 @@ pub struct AttachRequest {
 pub struct IdMapping {
     /// The base UID/GID inside the user namespace.
     pub base_nsid: u32,
+    
     /// The base UID/GID outside the user namespace.
     pub base_hostid: u32,
+    
     /// The number of UID/GIDs to remap.
     pub remap_count: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct ExecutableSpec {
-    // Executable path (not resolved by PATH)
+    /// Executable path (not resolved by PATH)
     pub executable: Option<String>,
-    // All arguments to the executable.
+    
+    /// All arguments to the executable.
     pub arguments: Option<Vec<String>>,
-    // A working directory, assuming that the rootfs is /.
+    
+    /// A working directory, assuming that the rootfs is /.
     pub working_directory: Option<String>,
-    // Environment variables, order kept by insertion.
+    
+    /// Environment variables, order kept by insertion.
     pub environment: Option<BTreeMap<String, String>>,
-    // An optional UID to assume.
-    // These UIDs are relative to the user namespace that is optionally set up.
+    
+    /// An optional UID to assume.
+    /// These UIDs are relative to the user namespace that is optionally set up.
     pub uid: Option<uid_t>,
-    // An optional GID to assume.
-    // These GIDs are relative to the user namespace that is optionally set up.
+    
+    /// An optional GID to assume.
+    /// These GIDs are relative to the user namespace that is optionally set up.
     pub gid: Option<gid_t>,
-    // An optional set of process-specific resource limits.
-    // If this set is not provided, setrlimit(2) will not be called.
+    
+    /// An optional set of process-specific resource limits.
+    /// If this set is not provided, setrlimit(2) will not be called.
     pub process_limits: Option<ProcessResourceLimits>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct CreateRequest {
-    // An opaque string which is used to designate workload identity.
-    // Should typically be a UUID, however, if not set, the supervisor
-    // process ID will be used as a limited fallback.
+    /// An opaque string which is used to designate workload identity.
+    /// Should typically be a UUID, however, if not set, the supervisor
+    /// process ID will be used as a limited fallback.
     pub workload_id: Option<String>,
-    // A bare rootfs. It should be assumed the rootfs is writable via a read-only layer and a writeable backing layer.
-    // It should be assumed the rootfs might already have mounts.
-    // It should be assumed that the rootfs might already have proc, sys, and dev mounts. (This might need to change?)
+    
+    /// A bare rootfs. It should be assumed the rootfs is writable via a read-only layer and a writeable backing layer.
+    /// It should be assumed the rootfs might already have mounts.
+    /// It should be assumed that the rootfs might already have proc, sys, and dev mounts. (This might need to change?)
     pub rootfs: Option<String>,
-    // The executable specification for the initial process created in this
-    // container.
+    
+    /// The executable specification for the initial process created in this
+    /// container.
     pub exec: ExecutableSpec,
-    // A set of UID mapping rules, used to set up the user namespace.
-    // If empty, a user namespace will not be created.
+    
+    /// A set of UID mapping rules, used to set up the user namespace.
+    /// If empty, a user namespace will not be created.
     pub uid_mappings: Option<Vec<IdMapping>>,
-    // A set of GID mapping rules, used to set up the user namespace.
-    // If empty, a user namespace will not be created.
+    
+    /// A set of GID mapping rules, used to set up the user namespace.
+    /// If empty, a user namespace will not be created.
     pub gid_mappings: Option<Vec<IdMapping>>,
-    // An optional set of mount specifications.
-    // `/proc` will be mounted regardless of whether a mount specification is configured.
+    
+    /// An optional set of mount specifications.
+    /// `/proc` will be mounted regardless of whether a mount specification is configured.
     pub mounts: Option<Vec<MountSpec>>,
-    // An optional set of resource limits.
-    // If this set is not provided, no cgroups will be configured.
+    
+    /// An optional set of resource limits.
+    /// If this set is not provided, no cgroups will be configured.
     pub limits: Option<ResourceLimits>,
-    // An optional path to a cgroup2 filesystem for setting resource limits.
-    // If this is not provided, we will attempt to set limits using the root
-    // hierarchy, but unprivileged users will require their own cgroup
-    // delegation. Ideally, this should be a path to that delegation.
+    
+    /// An optional path to a cgroup2 filesystem for setting resource limits.
+    /// If this is not provided, we will attempt to set limits using the root
+    /// hierarchy, but unprivileged users will require their own cgroup
+    /// delegation. Ideally, this should be a path to that delegation.
     pub cgroupfs: Option<String>,
-    // An optional hostname to be used for the container.
-    // If this is not provided, the workload identity will be used.
+    
+    /// An optional hostname to be used for the container.
+    /// If this is not provided, the workload identity will be used.
     pub hostname: Option<String>,
-    // An optional list of mutations to apply to the container FS.
+    
+    /// An optional list of mutations to apply to the container FS.
     pub mutations: Option<Vec<Mutation>>,
+    
     /// A set of namespaces to join.
     pub namespaces: Option<Vec<Namespace>>,
+    
     /// Whether setgroups(2) should be denied in this container.
     pub setgroups_deny: Option<bool>,
 }
@@ -108,7 +131,7 @@ pub enum Config {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct CreateDirMutation {
-    // The directory inside the container FS to create.
+    /// The directory inside the container FS to create.
     pub target: String,
 }
 
@@ -119,12 +142,12 @@ pub enum Mutation {
 }
 
 pub trait Wrappable {
-    // Process a configuration request.
+    /// Process a configuration request.
     fn wrap(&self) -> Result<()>;
 }
 
 pub trait Validatable {
-    // Validate the configuration and error if the configuration is invalid.
+    /// Validate the configuration and error if the configuration is invalid.
     fn validate(&self) -> Result<()>;
 }
 
@@ -158,38 +181,38 @@ impl Configurable for AttachRequest {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct MountSpec {
-    // The source location or device node for a mount point.
+    /// The source location or device node for a mount point.
     pub source: Option<String>,
 
-    // The target location of the mount point.
+    /// The target location of the mount point.
     pub target: String,
 
-    // The filesystem of the mount point.
+    /// The filesystem of the mount point.
     pub fstype: Option<String>,
 
-    // Whether the mount point is a bind mount.
+    /// Whether the mount point is a bind mount.
     pub bind: bool,
 
-    // Whether the mount point should recurse.
+    /// Whether the mount point should recurse.
     pub recurse: bool,
 
-    // Whether the mount point should be unshared, e.g. MS_PRIVATE flag.
+    /// Whether the mount point should be unshared, e.g. MS_PRIVATE flag.
     pub unshare: bool,
 
-    // Whether the mount point should be mounted with safety options, e.g. MS_NOSUID.
+    /// Whether the mount point should be mounted with safety options, e.g. MS_NOSUID.
     pub safe: bool,
 
-    // Whether the target mount point should be created as a directory if it
-    // does not exist.
+    /// Whether the target mount point should be created as a directory if it
+    /// does not exist.
     pub create_mountpoint: bool,
 }
 
 pub trait Mountable {
-    // Perform the mount operation.
+    /// Perform the mount operation.
     fn mount(&self) -> Result<()>;
 
-    // Pivot, making this mount point the new rootfs.
-    // The old rootfs is unmounted as a side effect.
+    /// Pivot, making this mount point the new rootfs.
+    /// The old rootfs is unmounted as a side effect.
     fn pivot(&self) -> Result<()>;
 }
 
