@@ -11,16 +11,17 @@ use std::path::PathBuf;
 use std::process;
 use std::ptr;
 
-use anyhow::{Result, anyhow};
-use log::{debug, warn};
-
+use crate::caps::{CapabilityBit, get_caps, set_caps};
 use crate::cgroup::CGroup;
 use crate::config::{
-    AttachRequest, CreateDirMutation, CreateRequest, ExecutableSpec, IdMapping, MountSpec,
-    Mountable, Mutatable, Mutation, Wrappable,
+    AttachRequest, Capabilities, CreateDirMutation, CreateRequest, ExecutableSpec, IdMapping,
+    MountSpec, Mountable, Mutatable, Mutation, Wrappable,
 };
 use crate::namespace::Namespace;
 use crate::unshare::{setns, unshare};
+use anyhow::{Result, anyhow, bail};
+use libc::{PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, c_int, prctl};
+use log::{debug, warn};
 
 // We have to do this because the libc crate does not consistently provide
 // bindings for setrlimit(2).  Non-GNU uses signed i32 for resource enums,
@@ -247,7 +248,10 @@ impl Wrappable for CreateRequest {
             Namespace::Uts,
             Namespace::Pid,
             Namespace::Ipc,
+            Namespace::User,
         ]);
+
+        debug!("namespaces: {:?}", target_ns);
 
         debug!(
             "maybe create a new supervisor cgroup for workload identity {}",
@@ -257,8 +261,14 @@ impl Wrappable for CreateRequest {
             warn!("unable to set resource limits, cgroup access denied!");
         }
 
+        let first_level_ns = target_ns
+            .iter()
+            .filter(|ns| **ns != Namespace::User)
+            .cloned()
+            .collect::<Vec<_>>();
+
         debug!("unsharing namespaces");
-        unshare(&target_ns)?;
+        unshare(&first_level_ns)?;
 
         debug!("update boot time");
         if self.update_boottime().is_err() {
@@ -287,12 +297,14 @@ impl Wrappable for CreateRequest {
             let mut buf = [0u8; 8];
             pef.read_exact(&mut buf)?;
 
-            // We are preparing the userns for PID 1 because we are in the same mount namespace
-            // as the child, and thus the first process created is always PID 1.  We no longer
-            // have access to the host /proc so we just hardcode PID 1 and hope for the best.
-            // So far, this seems to work fairly well.
-            debug!("child has dropped into its own userns, configuring from supervisor");
-            self.prepare_userns(1)?;
+            if target_ns.contains(&Namespace::User) {
+                // We are preparing the userns for PID 1 because we are in the same mount namespace
+                // as the child, and thus the first process created is always PID 1.  We no longer
+                // have access to the host /proc so we just hardcode PID 1 and hope for the best.
+                // So far, this seems to work fairly well.
+                debug!("child has dropped into its own userns, configuring from supervisor");
+                self.prepare_userns(1)?;
+            }
 
             // The supervisor has now configured the user namespace, so let the first process run.
             let mut cef = unsafe { File::from_raw_fd(child_efd) };
@@ -388,12 +400,15 @@ impl Wrappable for CreateRequest {
 
         newroot.pivot().expect("failed to pivot to new rootfs");
 
-        debug!("mount tree finalized, doing final prep for userns");
-
+        debug!("mount tree finalized, doing final prep");
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
-        let ns = vec![Namespace::User];
 
-        unshare(&ns)?;
+        if target_ns.contains(&Namespace::User) {
+            debug!("unsharing user namespace");
+            unshare(&vec![Namespace::User])?;
+        }
+
+        apply_capabilities(self.capabilities.as_ref())?;
 
         debug!("signalling supervisor to do configuration");
         pef.write_all(&2_u64.to_ne_bytes())?;
@@ -548,9 +563,11 @@ impl Wrappable for AttachRequest {
             Namespace::Time,
             Namespace::Uts,
             Namespace::Pid,
-            Namespace::User,
             Namespace::Ipc,
+            Namespace::User,
         ]);
+
+        debug!("namespaces: {:?}", target_ns);
 
         let target_pid = first_child_pid_of(self.pid)?;
 
@@ -573,6 +590,8 @@ impl Wrappable for AttachRequest {
             warn!("unable to set process limits");
         }
 
+        apply_capabilities(self.capabilities.as_ref())?;
+
         debug!("all namespaces joined -- forking child");
         fork_and_wait()?;
 
@@ -588,4 +607,61 @@ impl Mutatable for CreateDirMutation {
 
         Ok(fs::create_dir_all(path)?)
     }
+}
+
+fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
+    let Some(caps) = capabilities else {
+        return Ok(());
+    };
+
+    debug!("setting process capabilities");
+    let mut current_capabilities = get_caps()?;
+    let drops = Capabilities::names_as_bits(caps.drop.as_deref().unwrap_or(&[]))?;
+    let raises = Capabilities::names_as_bits(caps.raise.as_deref().unwrap_or(&[]))?;
+    let raises_ambient = Capabilities::names_as_bits(caps.raise_ambient.as_deref().unwrap_or(&[]))?;
+
+    current_capabilities.effective =
+        CapabilityBit::clear_bits(current_capabilities.effective, &drops);
+    current_capabilities.effective =
+        CapabilityBit::set_bits(current_capabilities.effective, &raises);
+    current_capabilities.permitted = current_capabilities.effective;
+    current_capabilities.inheritable = current_capabilities.effective;
+    set_caps(current_capabilities)?;
+
+    for drop in &drops {
+        let error = unsafe {
+            prctl(
+                PR_CAP_AMBIENT,
+                PR_CAP_AMBIENT_LOWER,
+                drop.to_cap_number() as c_int,
+                0,
+                0,
+            )
+        };
+        if error != 0 {
+            bail!(
+                "failed to drop ambient capability: {}",
+                Error::last_os_error()
+            );
+        }
+    }
+
+    for raise in &raises_ambient {
+        let error = unsafe {
+            prctl(
+                PR_CAP_AMBIENT,
+                PR_CAP_AMBIENT_RAISE,
+                raise.to_cap_number() as c_int,
+                0,
+                0,
+            )
+        };
+        if error != 0 {
+            bail!(
+                "failed to raise ambient capability: {}",
+                Error::last_os_error()
+            );
+        }
+    }
+    Ok(())
 }

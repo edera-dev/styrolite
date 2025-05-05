@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-
-use anyhow::Result;
+use crate::caps::CapabilityBit;
+use crate::namespace::Namespace;
+use anyhow::{Result, bail};
 use libc::{gid_t, pid_t, uid_t};
 use serde::{Deserialize, Serialize};
-
-use crate::namespace::Namespace;
+use std::collections::{BTreeMap, HashSet};
+use std::str::FromStr;
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct AttachRequest {
@@ -25,6 +25,8 @@ pub struct AttachRequest {
     pub cgroupfs: Option<String>,
     /// A set of namespaces to join.
     pub namespaces: Option<Vec<Namespace>>,
+    /// Capabilities for this attachment.
+    pub capabilities: Option<Capabilities>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -97,6 +99,35 @@ pub struct CreateRequest {
     pub namespaces: Option<Vec<Namespace>>,
     /// Whether setgroups(2) should be denied in this container.
     pub setgroups_deny: Option<bool>,
+    /// Capabilities for this container.
+    pub capabilities: Option<Capabilities>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct Capabilities {
+    /// Capabilities to raise on the container.
+    pub raise: Option<Vec<String>>,
+    /// Ambient capabilities to raise on the container.
+    pub raise_ambient: Option<Vec<String>>,
+    /// Capabilities to drop on the container.
+    pub drop: Option<Vec<String>>,
+}
+
+impl Capabilities {
+    pub fn names_as_bits(names: &[String]) -> Result<Vec<CapabilityBit>> {
+        let mut caps = HashSet::new();
+        for name in names {
+            let bit = CapabilityBit::from_str(name).ok();
+            if let Some(bit) = bit {
+                caps.insert(bit);
+            } else if name.to_uppercase() == "ALL" {
+                caps.extend(CapabilityBit::ALL.iter().cloned());
+            } else {
+                bail!("unknown capability: {}", name);
+            }
+        }
+        Ok(caps.into_iter().collect())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
