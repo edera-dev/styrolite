@@ -1,4 +1,4 @@
-pub mod capability;
+pub mod caps;
 pub mod cgroup;
 pub mod config;
 pub mod mount;

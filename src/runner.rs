@@ -7,10 +7,31 @@ use libc::{gid_t, pid_t, uid_t};
 use mktemp::TempFile;
 
 use crate::config::{
-    AttachRequest, Configurable, CreateRequest, IdMapping, MountSpec, Mutation,
+    AttachRequest, Capabilities, Configurable, CreateRequest, IdMapping, MountSpec, Mutation,
     ProcessResourceLimits,
 };
 use crate::namespace::Namespace;
+
+fn add_to_cap_list(
+    value: String,
+    caps: &mut Option<Capabilities>,
+    get_list: impl FnOnce(&mut Capabilities) -> &mut Option<Vec<String>>,
+) {
+    if caps.is_none() {
+        *caps = Some(Capabilities::default());
+    }
+
+    if let Some(caps) = caps {
+        let list = get_list(caps);
+        if list.is_none() {
+            *list = Some(Vec::new());
+        }
+
+        if let Some(list) = list {
+            list.push(value);
+        }
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct AttachRequestBuilder {
@@ -79,6 +100,33 @@ impl AttachRequestBuilder {
             nsset.push(ns);
         }
 
+        self
+    }
+
+    pub fn push_raise_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.raise,
+        );
+        self
+    }
+
+    pub fn push_raise_ambient_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.raise_ambient,
+        );
+        self
+    }
+
+    pub fn push_drop_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.drop,
+        );
         self
     }
 
@@ -233,6 +281,33 @@ impl CreateRequestBuilder {
             mutations.push(spec);
         }
 
+        self
+    }
+
+    pub fn push_raise_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.raise,
+        );
+        self
+    }
+
+    pub fn push_raise_ambient_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.raise_ambient,
+        );
+        self
+    }
+
+    pub fn push_drop_capability(mut self, cap: impl AsRef<str>) -> Self {
+        add_to_cap_list(
+            cap.as_ref().to_string(),
+            &mut self.config.capabilities,
+            |caps| &mut caps.drop,
+        );
         self
     }
 
