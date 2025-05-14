@@ -10,11 +10,11 @@ use std::str::FromStr;
 pub struct AttachRequest {
     /// The PID to join in the namespace.
     pub pid: pid_t,
-    
+
     /// The executable specification for the new process created in this
     /// container.
     pub exec: ExecutableSpec,
-    
+
     /// An opaque string which is used to designate workload identity.
     /// In the case of attaching to a pre-existing container, it should be
     /// the UUID of the target container.
@@ -22,11 +22,11 @@ pub struct AttachRequest {
     /// the attached process with the rest of the resource usage of the
     /// container.
     pub workload_id: Option<String>,
-    
+
     /// An optional path to a cgroup2 filesystem to attach to. See
     /// CreateRequest::cgroupfs for a more detailed explanation.
     pub cgroupfs: Option<String>,
-    
+
     /// A set of namespaces to join.
     pub namespaces: Option<Vec<Namespace>>,
     /// Capabilities for this attachment.
@@ -37,10 +37,10 @@ pub struct AttachRequest {
 pub struct IdMapping {
     /// The base UID/GID inside the user namespace.
     pub base_nsid: u32,
-    
+
     /// The base UID/GID outside the user namespace.
     pub base_hostid: u32,
-    
+
     /// The number of UID/GIDs to remap.
     pub remap_count: u32,
 }
@@ -49,24 +49,24 @@ pub struct IdMapping {
 pub struct ExecutableSpec {
     /// Executable path (not resolved by PATH)
     pub executable: Option<String>,
-    
+
     /// All arguments to the executable.
     pub arguments: Option<Vec<String>>,
-    
+
     /// A working directory, assuming that the rootfs is /.
     pub working_directory: Option<String>,
-    
+
     /// Environment variables, order kept by insertion.
     pub environment: Option<BTreeMap<String, String>>,
-    
+
     /// An optional UID to assume.
     /// These UIDs are relative to the user namespace that is optionally set up.
     pub uid: Option<uid_t>,
-    
+
     /// An optional GID to assume.
     /// These GIDs are relative to the user namespace that is optionally set up.
     pub gid: Option<gid_t>,
-    
+
     /// An optional set of process-specific resource limits.
     /// If this set is not provided, setrlimit(2) will not be called.
     pub process_limits: Option<ProcessResourceLimits>,
@@ -78,48 +78,48 @@ pub struct CreateRequest {
     /// Should typically be a UUID, however, if not set, the supervisor
     /// process ID will be used as a limited fallback.
     pub workload_id: Option<String>,
-    
+
     /// A bare rootfs. It should be assumed the rootfs is writable via a read-only layer and a writeable backing layer.
     /// It should be assumed the rootfs might already have mounts.
     /// It should be assumed that the rootfs might already have proc, sys, and dev mounts. (This might need to change?)
     pub rootfs: Option<String>,
-    
+
     /// The executable specification for the initial process created in this
     /// container.
     pub exec: ExecutableSpec,
-    
+
     /// A set of UID mapping rules, used to set up the user namespace.
     /// If empty, a user namespace will not be created.
     pub uid_mappings: Option<Vec<IdMapping>>,
-    
+
     /// A set of GID mapping rules, used to set up the user namespace.
     /// If empty, a user namespace will not be created.
     pub gid_mappings: Option<Vec<IdMapping>>,
-    
+
     /// An optional set of mount specifications.
     /// `/proc` will be mounted regardless of whether a mount specification is configured.
     pub mounts: Option<Vec<MountSpec>>,
-    
+
     /// An optional set of resource limits.
     /// If this set is not provided, no cgroups will be configured.
     pub limits: Option<ResourceLimits>,
-    
+
     /// An optional path to a cgroup2 filesystem for setting resource limits.
     /// If this is not provided, we will attempt to set limits using the root
     /// hierarchy, but unprivileged users will require their own cgroup
     /// delegation. Ideally, this should be a path to that delegation.
     pub cgroupfs: Option<String>,
-    
+
     /// An optional hostname to be used for the container.
     /// If this is not provided, the workload identity will be used.
     pub hostname: Option<String>,
-    
+
     /// An optional list of mutations to apply to the container FS.
     pub mutations: Option<Vec<Mutation>>,
-    
+
     /// A set of namespaces to join.
     pub namespaces: Option<Vec<Namespace>>,
-    
+
     /// Whether setgroups(2) should be denied in this container.
     pub setgroups_deny: Option<bool>,
     /// Capabilities for this container.
