@@ -458,16 +458,24 @@ impl ExecutableSpec {
 
         if let Some(target_uid) = self.uid {
             unsafe {
-                if libc::setuid(target_uid as libc::uid_t) < 0 {
-                    warn!("unable to set target UID: {:?}", Error::last_os_error());
+                // Check this to avoid a spurious log if we don't need to change,
+                // because we are already running as the target UID.
+                if libc::getuid() != target_uid {
+                    if libc::setuid(target_uid as libc::uid_t) < 0 {
+                        warn!("unable to set target UID: {:?}", Error::last_os_error());
+                    }
                 }
             }
         }
 
         if let Some(target_gid) = self.gid {
             unsafe {
-                if libc::setgid(target_gid as libc::gid_t) < 0 {
-                    warn!("unable to set target GID: {:?}", Error::last_os_error());
+                // Check this to avoid a spurious log if we don't need to change,
+                // because we are already running as the target GID.
+                if libc::getgid() != target_gid {
+                    if libc::setgid(target_gid as libc::gid_t) < 0 {
+                        warn!("unable to set target GID: {:?}", Error::last_os_error());
+                    }
                 }
             }
         }
