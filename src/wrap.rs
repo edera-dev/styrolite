@@ -73,9 +73,9 @@ fn wait_for_pid(pid: libc::pid_t) -> Result<i32> {
 fn fork_and_wait() -> Result<()> {
     let pid = unsafe { libc::fork() };
     if pid > 0 {
-        debug!("child pid = {}", pid);
+        debug!("child pid = {pid}");
         let exitcode = wait_for_pid(pid)?;
-        debug!("[pid {}] exitcode = {}", pid, exitcode);
+        debug!("[pid {pid}] exitcode = {exitcode}");
         process::exit(exitcode);
     }
 
@@ -88,7 +88,7 @@ fn fork_and_wait() -> Result<()> {
 /// *supervised* process, not the *supervisor* process, which exists in
 /// a different set of namespaces than the ones we want to attach to.
 fn first_child_pid_of(parent: libc::pid_t) -> Result<libc::pid_t> {
-    let child_set = fs::read_to_string(format!("/proc/{0}/task/{0}/children", parent))?;
+    let child_set = fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))?;
     let first_child = child_set.split(" ").collect::<Vec<_>>()[0];
 
     match first_child.parse::<libc::pid_t>() {
@@ -127,9 +127,9 @@ impl CreateRequest {
         let boot_time = if boot_time <= 0 {
             "0".to_string()
         } else {
-            format!("-{}", boot_time)
+            format!("-{boot_time}")
         };
-        let timecfg = format!("boottime {} 0\n", boot_time);
+        let timecfg = format!("boottime {boot_time} 0\n");
         fs::write("/proc/self/timens_offsets", timecfg.as_bytes())?;
         Ok(())
     }
@@ -137,19 +137,19 @@ impl CreateRequest {
     fn prepare_userns(&self, pid: libc::pid_t) -> Result<()> {
         if let Some(uid_mappings) = &self.uid_mappings {
             fs::write(
-                format!("/proc/{}/uid_map", pid),
+                format!("/proc/{pid}/uid_map"),
                 render_uidgid_mappings(uid_mappings),
             )?;
         }
 
         let sgd = self.setgroups_deny.unwrap_or(true);
         if sgd {
-            fs::write(format!("/proc/{}/setgroups", pid), "deny".as_bytes())?;
+            fs::write(format!("/proc/{pid}/setgroups"), "deny".as_bytes())?;
         }
 
         if let Some(gid_mappings) = &self.gid_mappings {
             fs::write(
-                format!("/proc/{}/gid_map", pid),
+                format!("/proc/{pid}/gid_map"),
                 render_uidgid_mappings(gid_mappings),
             )?;
         }
@@ -163,11 +163,8 @@ impl CreateRequest {
         match &self.workload_id {
             Some(wid) => Ok(wid.to_string()),
             None => {
-                warn!(
-                    "workload identity not set, using supervisor pid {} as identity",
-                    pid
-                );
-                Ok(format!("{}", pid))
+                warn!("workload identity not set, using supervisor pid {pid} as identity");
+                Ok(format!("{pid}"))
             }
         }
     }
@@ -178,7 +175,7 @@ impl CreateRequest {
             .expect("unable to determine a workload identity");
         let final_hostname = match &self.hostname {
             Some(hostname) => hostname.to_string(),
-            None => format!("litewrap-{}", wid),
+            None => format!("litewrap-{wid}"),
         };
         let final_hostname_cstr =
             CString::new(final_hostname).expect("unable to parse hostname as valid C string");
@@ -210,20 +207,20 @@ impl CreateRequest {
         let _: Vec<_> = limits
             .into_iter()
             .map(|(k, v)| {
-                debug!("configuring resource limit {} = {}", k, v);
+                debug!("configuring resource limit {k} = {v}");
                 match subtree.clone().set_child_value(&k, &v) {
                     Ok(_) => (),
                     Err(e) => {
-                        warn!("unable to set resource limit '{}': {:?}", k, e);
+                        warn!("unable to set resource limit '{k}': {e:?}");
                     }
                 }
             })
             .collect();
 
-        debug!("binding supervisor (pid {}) to cgroup", pid);
+        debug!("binding supervisor (pid {pid}) to cgroup");
         subtree
             .clone()
-            .set_child_value("cgroup.procs", &format!("{}", pid))?;
+            .set_child_value("cgroup.procs", &format!("{pid}"))?;
 
         Ok(())
     }
@@ -240,7 +237,7 @@ impl Wrappable for CreateRequest {
     /// Exit code of this process should match the exit code of the process to run.
     /// For simplicity, litewrap should not currently act as a reaper. tini can do that for now.
     fn wrap(&self) -> Result<()> {
-        debug!("executing with config {:?}", self);
+        debug!("executing with config {self:?}");
 
         let target_ns = self.namespaces.clone().unwrap_or(vec![
             Namespace::Mount,
@@ -251,7 +248,7 @@ impl Wrappable for CreateRequest {
             Namespace::User,
         ]);
 
-        debug!("namespaces: {:?}", target_ns);
+        debug!("namespaces: {target_ns:?}");
 
         debug!(
             "maybe create a new supervisor cgroup for workload identity {}",
@@ -290,10 +287,10 @@ impl Wrappable for CreateRequest {
         let child_efd = unsafe { libc::eventfd(0, libc::EFD_SEMAPHORE) };
         let pid = unsafe { libc::fork() };
         if pid > 0 {
-            debug!("child pid = {}", pid);
+            debug!("child pid = {pid}");
             let mut pef = unsafe { File::from_raw_fd(parent_efd) };
-            debug!("parent efd = {}", parent_efd);
-            debug!("child efd = {}", child_efd);
+            debug!("parent efd = {parent_efd}");
+            debug!("child efd = {child_efd}");
             let mut buf = [0u8; 8];
             pef.read_exact(&mut buf)?;
 
@@ -311,7 +308,7 @@ impl Wrappable for CreateRequest {
             cef.write_all(&1_u64.to_ne_bytes())?;
 
             let exitcode = wait_for_pid(pid)?;
-            debug!("[pid {}] exitcode = {}", pid, exitcode);
+            debug!("[pid {pid}] exitcode = {exitcode}");
             process::exit(exitcode);
         }
 
@@ -357,7 +354,7 @@ impl Wrappable for CreateRequest {
         // Mount /proc.
         let procfs = MountSpec {
             source: Some("proc".to_string()),
-            target: format!("{}/proc", rootfs),
+            target: format!("{rootfs}/proc"),
             fstype: Some("proc".to_string()),
             bind: false,
             recurse: true,
@@ -448,7 +445,7 @@ impl ExecutableSpec {
         let env_cstrings: Vec<_> = if let Some(env) = &self.environment {
             env.clone()
                 .into_iter()
-                .map(|(key, value)| CString::new(format!("{}={}", key, value).as_bytes()))
+                .map(|(key, value)| CString::new(format!("{key}={value}").as_bytes()))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             vec![]
@@ -460,10 +457,8 @@ impl ExecutableSpec {
             unsafe {
                 // Check this to avoid a spurious log if we don't need to change,
                 // because we are already running as the target UID.
-                if libc::getuid() != target_uid {
-                    if libc::setuid(target_uid as libc::uid_t) < 0 {
-                        warn!("unable to set target UID: {:?}", Error::last_os_error());
-                    }
+                if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
+                    warn!("unable to set target UID: {:?}", Error::last_os_error());
                 }
             }
         }
@@ -472,10 +467,8 @@ impl ExecutableSpec {
             unsafe {
                 // Check this to avoid a spurious log if we don't need to change,
                 // because we are already running as the target GID.
-                if libc::getgid() != target_gid {
-                    if libc::setgid(target_gid as libc::gid_t) < 0 {
-                        warn!("unable to set target GID: {:?}", Error::last_os_error());
-                    }
+                if libc::getgid() != target_gid && libc::setgid(target_gid as libc::gid_t) < 0 {
+                    warn!("unable to set target GID: {:?}", Error::last_os_error());
                 }
             }
         }
@@ -535,11 +528,8 @@ impl AttachRequest {
         match &self.workload_id {
             Some(wid) => Ok(wid.to_string()),
             None => {
-                warn!(
-                    "workload identity not set, using supervisor pid {} as identity",
-                    pid
-                );
-                Ok(format!("{}", pid))
+                warn!("workload identity not set, using supervisor pid {pid} as identity");
+                Ok(format!("{pid}"))
             }
         }
     }
@@ -553,10 +543,10 @@ impl AttachRequest {
         let cgroot = CGroup::open(&cgbase)?;
         let subtree = cgroot.create_child(format!("litewrap-{}", self.identity()?))?;
 
-        debug!("binding supervisor (pid {}) to cgroup", pid);
+        debug!("binding supervisor (pid {pid}) to cgroup");
         subtree
             .clone()
-            .set_child_value("cgroup.procs", &format!("{}", pid))?;
+            .set_child_value("cgroup.procs", &format!("{pid}"))?;
 
         Ok(())
     }
@@ -564,7 +554,7 @@ impl AttachRequest {
 
 impl Wrappable for AttachRequest {
     fn wrap(&self) -> Result<()> {
-        debug!("executing with config {:?}", self);
+        debug!("executing with config {self:?}");
 
         let target_ns = self.namespaces.clone().unwrap_or(vec![
             Namespace::Mount,
@@ -575,7 +565,7 @@ impl Wrappable for AttachRequest {
             Namespace::User,
         ]);
 
-        debug!("namespaces: {:?}", target_ns);
+        debug!("namespaces: {target_ns:?}");
 
         let target_pid = first_child_pid_of(self.pid)?;
 
@@ -587,10 +577,7 @@ impl Wrappable for AttachRequest {
             warn!("unable to set resource limits, cgroup access denied!");
         }
 
-        debug!(
-            "determined that we want to use the namespaces of host PID {}",
-            target_pid
-        );
+        debug!("determined that we want to use the namespaces of host PID {target_pid}");
         setns(target_pid, &target_ns)?;
 
         debug!("setting process limits");
