@@ -9,10 +9,10 @@ use libc;
 use crate::config::{MountSpec, Mountable};
 
 fn unpack(data: Option<String>) -> CString {
-    if data.is_some() {
-        if let Ok(cstr) = CString::new(data.unwrap()) {
-            return cstr;
-        }
+    if data.is_some()
+        && let Ok(cstr) = CString::new(data.unwrap())
+    {
+        return cstr;
     }
 
     CString::new("").expect("")

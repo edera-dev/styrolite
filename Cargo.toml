@@ -8,14 +8,14 @@ repository = "https://github.com/edera-dev/styrolite"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 env_logger = "0.11.8"
-libc = "0.2.174"
+libc = "0.2.175"
 log = "0.4.27"
 mktemp-rs = "0.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
-tokio = { version = "1.47.0", optional = true }
+serde_json = "1.0.143"
+tokio = { version = "1.47.1", optional = true }
 
 [features]
 async = ["dep:tokio"]
