@@ -8,10 +8,10 @@ NATIVE_ARCH="$(uname -m)"
 [ "${NATIVE_ARCH}" = "amd64" ] && NATIVE_ARCH="x86_64"
 
 if [ "$(uname)" != "Linux" ]; then
-	cargo clippy --workspace --fix --allow-dirty --allow-staged \
-		--target "${NATIVE_ARCH}-unknown-linux-gnu"
+  cargo clippy --workspace --fix --allow-dirty --allow-staged \
+    --target "${NATIVE_ARCH}-unknown-linux-gnu"
 else
-	cargo clippy --workspace --fix --allow-dirty --allow-staged
+  cargo clippy --workspace --fix --allow-dirty --allow-staged
 fi
 
 cargo fmt --all
