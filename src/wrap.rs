@@ -224,6 +224,95 @@ impl CreateRequest {
 
         Ok(())
     }
+
+    fn pivot_fs(&self) -> Result<()> {
+        debug!("early mount!");
+
+        let rootfs = self
+            .rootfs
+            .clone()
+            .expect("expected rootfs to be configured");
+
+        // Unshare rootfs mount so we can later pivot to a new rootfs.
+        // The unshared root mount will be cleaned up once the new rootfs is
+        // in place.
+        let oldroot = MountSpec {
+            source: None,
+            target: "/".to_string(),
+            fstype: None,
+            bind: false,
+            recurse: true,
+            unshare: true,
+            safe: false,
+            create_mountpoint: false,
+        };
+
+        oldroot
+            .mount()
+            .expect("failed to unshare / in new mount namespace");
+
+        // Now mount the new rootfs.
+        let newroot = MountSpec {
+            source: Some(rootfs.clone()),
+            target: rootfs.clone(),
+            fstype: Some("none".to_string()),
+            bind: true,
+            recurse: true,
+            unshare: false,
+            safe: false,
+            create_mountpoint: false,
+        };
+
+        newroot.mount().expect("failed to bind new rootfs");
+
+        // Mount /proc.
+        let procfs = MountSpec {
+            source: Some("proc".to_string()),
+            target: format!("{rootfs}/proc"),
+            fstype: Some("proc".to_string()),
+            bind: false,
+            recurse: true,
+            unshare: false,
+            safe: true,
+            create_mountpoint: false,
+        };
+
+        procfs.mount().expect("failed to mount /proc");
+
+        if let Some(mounts) = &self.mounts {
+            for mount in mounts {
+                let parented_target = format!("{}/{}", rootfs, mount.target);
+                let parented_mount = MountSpec {
+                    source: mount.source.clone(),
+                    target: parented_target.clone(),
+                    fstype: mount.fstype.clone(),
+                    bind: mount.bind,
+                    recurse: mount.recurse,
+                    unshare: mount.unshare,
+                    safe: mount.safe,
+                    create_mountpoint: mount.create_mountpoint,
+                };
+
+                parented_mount
+                    .mount()
+                    .expect("failed to process mount spec");
+            }
+        }
+
+        if let Some(mutations) = &self.mutations {
+            for mutation in mutations {
+                match mutation {
+                    Mutation::CreateDir(cdm) => {
+                        cdm.mutate(&rootfs).expect("failed to create directory");
+                    }
+                };
+            }
+        }
+
+        newroot.pivot().expect("failed to pivot to new rootfs");
+
+        Ok(())
+    }
 }
 
 impl Wrappable for CreateRequest {
@@ -312,90 +401,12 @@ impl Wrappable for CreateRequest {
             process::exit(exitcode);
         }
 
-        debug!("early mount!");
-
-        let rootfs = self
-            .rootfs
-            .clone()
-            .expect("expected rootfs to be configured");
-
-        // Unshare rootfs mount so we can later pivot to a new rootfs.
-        // The unshared root mount will be cleaned up once the new rootfs is
-        // in place.
-        let oldroot = MountSpec {
-            source: None,
-            target: "/".to_string(),
-            fstype: None,
-            bind: false,
-            recurse: true,
-            unshare: true,
-            safe: false,
-            create_mountpoint: false,
-        };
-
-        oldroot
-            .mount()
-            .expect("failed to unshare / in new mount namespace");
-
-        // Now mount the new rootfs.
-        let newroot = MountSpec {
-            source: Some(rootfs.clone()),
-            target: rootfs.clone(),
-            fstype: Some("none".to_string()),
-            bind: true,
-            recurse: true,
-            unshare: false,
-            safe: false,
-            create_mountpoint: false,
-        };
-
-        newroot.mount().expect("failed to bind new rootfs");
-
-        // Mount /proc.
-        let procfs = MountSpec {
-            source: Some("proc".to_string()),
-            target: format!("{rootfs}/proc"),
-            fstype: Some("proc".to_string()),
-            bind: false,
-            recurse: true,
-            unshare: false,
-            safe: true,
-            create_mountpoint: false,
-        };
-
-        procfs.mount().expect("failed to mount /proc");
-
-        if let Some(mounts) = &self.mounts {
-            for mount in mounts {
-                let parented_target = format!("{}/{}", rootfs, mount.target);
-                let parented_mount = MountSpec {
-                    source: mount.source.clone(),
-                    target: parented_target.clone(),
-                    fstype: mount.fstype.clone(),
-                    bind: mount.bind,
-                    recurse: mount.recurse,
-                    unshare: mount.unshare,
-                    safe: mount.safe,
-                    create_mountpoint: mount.create_mountpoint,
-                };
-
-                parented_mount
-                    .mount()
-                    .expect("failed to process mount spec");
-            }
+        if target_ns.contains(&Namespace::Mount) {
+            self.pivot_fs()?;
+        } else {
+            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
+            warn!("this is an insecure configuration!");
         }
-
-        if let Some(mutations) = &self.mutations {
-            for mutation in mutations {
-                match mutation {
-                    Mutation::CreateDir(cdm) => {
-                        cdm.mutate(&rootfs).expect("failed to create directory");
-                    }
-                };
-            }
-        }
-
-        newroot.pivot().expect("failed to pivot to new rootfs");
 
         debug!("mount tree finalized, doing final prep");
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
