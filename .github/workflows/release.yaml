@@ -15,6 +15,7 @@ jobs:
     if: ${{ github.repository_owner == 'edera-dev' }}
     name: Release-plz release
     runs-on: ubuntu-latest
+    environment: release  # Environment for trusted publishing
     permissions:
       contents: write # Needed to write release artifacts
       id-token: write # Needed for trusted publishing
@@ -46,12 +47,12 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
-          CARGO_REGISTRY_TOKEN: "${{ secrets.STYROLITE_CARGO_TOKEN }}"
 
   release-plz-pr:
     if: ${{ github.repository_owner == 'edera-dev' }}
     name: Release-plz PR
     runs-on: ubuntu-latest
+    environment: release  # Environment for trusted publishing
     permissions:
       contents: write      # Needed to write release artifacts
       id-token: write      # Needed for trusted publishing
@@ -87,4 +88,3 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
-          CARGO_REGISTRY_TOKEN: "${{ secrets.STYROLITE_CARGO_TOKEN }}"
