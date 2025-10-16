@@ -1,0 +1,72 @@
+name: Publish Binary
+
+on:
+  # This action runs whenever a release is published
+  release:
+    types:
+    - published
+
+permissions:
+  contents: read
+
+jobs:
+  upload-artifact:
+    if: ${{ github.repository_owner == 'edera-dev' }}
+    name: Publish Binary
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - { os: linux, arch: x86_64, on: ubuntu-latest }
+    env:
+      TARGET_OS: '${{ matrix.platform.os }}'
+      TARGET_ARCH: '${{ matrix.platform.arch }}'
+    runs-on: '${{ matrix.platform.on }}'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
+
+      - name: Install cargo-make
+        run: cargo install cargo-make
+
+      - name: 'Build binary'
+        run: cargo make --profile release build
+
+      - name: 'Assemble styrolite executable'
+        run: |
+          tag_name='${{ github.event.release.tag_name }}'
+          [ -z $tag_name ] && tag_name='${{ github.event.repository.default_branch }}'
+          export STYROLITE_FORM='styrolite'
+          export STYROLITE_TAG_NAME="${tag_name}"
+          export STYROLITE_PLATFORM='${{ matrix.platform.os }}-${{ matrix.platform.arch }}'
+          export STYROLITE_RELEASE_DIR='target/release'
+          cargo make --profile release assemble-release-assets
+
+      - name: 'Upload styrolite to workflow run'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: styrolite-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: |
+            target/assets/*
+
+      - name: generate cultivator token
+        uses: actions/create-github-app-token@21cfef2b496dd8ef5b904c159339626a10ad380e # v1.11.6
+        id: generate-token
+        with:
+          app-id: "${{ secrets.EDERA_CULTIVATION_APP_ID }}"
+          private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
+
+      - name: 'Upload all release artifacts'
+        run: |
+          export STYROLITE_TAG_NAME='${{ github.event.release.tag_name }}'
+          cargo make --profile release upload-release-assets
+        env:
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
