@@ -87,6 +87,20 @@ env = { STYROLITE_SHFMT_WRITE = "true" }
 command = "./hack/code/shfmt.sh"
 dependencies = ["shfmt-exists"]
 
+[tasks.zizmor-exists]
+script = '''
+if ! command -v zizmor; then
+  echo "please install zizmor"
+  exit 1
+fi
+'''
+
+[tasks.zizmor]
+script = '''
+GH_TOKEN=$(gh auth token) zizmor --pedantic .
+'''
+dependencies = ["check-gh-installed", "zizmor-exists"]
+
 #
 # Release Tasks
 #

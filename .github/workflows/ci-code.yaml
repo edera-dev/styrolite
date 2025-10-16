@@ -13,7 +13,7 @@ on:
       - .github/workflows/ci-code.yaml
 
 permissions:
-  contents: read
+  contents: read # Default token to read
 
 jobs:
   setup-cargo-make:
@@ -27,7 +27,7 @@ jobs:
         id: get-version
         run: |
           VERSION=$(curl -s \
-            -H "User-Agent: github.com/found-it/hello-rs (contact: jpetersenames@gmail.com>)" \
+            -H "User-Agent: github.com/edera-dev/styrolite (contact: support@edera.dev>)" \
             https://crates.io/api/v1/crates/cargo-make | jq -r '.crate.max_stable_version')
           echo "cargo_make_version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -41,7 +41,9 @@ jobs:
       - name: Install cargo-make if missing or outdated
         if: steps.cache-cargo-make.outputs.cache-hit != 'true'
         run: |
-          cargo install cargo-make --version ${{ steps.get-version.outputs.cargo_make_version }} --force
+          cargo install cargo-make --version "${CARGO_MAKE_VERSION}" --force
+        env:
+          CARGO_MAKE_VERSION: ${{ steps.get-version.outputs.cargo_make_version }}
 
       - name: Verify cargo-make
         run: cargo make --version
@@ -51,81 +53,81 @@ jobs:
     runs-on: ubuntu-latest
     needs: setup-cargo-make
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: 'cargo fmt'
-      run: cargo make format-check
+      - name: 'cargo fmt'
+        run: cargo make format-check
 
   shfmt:
     name: shfmt
     runs-on: ubuntu-latest
     needs: setup-cargo-make
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: shfmt
-      run: |
-        GOBIN=/usr/local/bin go install mvdan.cc/sh/v3/cmd/shfmt@latest
-        if ! cargo make shfmt; then
-          echo ""
-          echo "Please run \`cargo make shfmt-write\`"
-          exit 1
-        fi
+      - name: shfmt
+        run: |
+          GOBIN=/usr/local/bin go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          if ! cargo make shfmt; then
+            echo ""
+            echo "Please run \`cargo make shfmt-write\`"
+            exit 1
+          fi
 
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
     needs: setup-cargo-make
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: shellcheck
-      run: cargo make shellcheck
+      - name: shellcheck
+        run: cargo make shellcheck
 
   full-build:
     runs-on: ubuntu-latest
@@ -139,25 +141,25 @@ jobs:
       TARGET_ARCH: "${{ matrix.arch }}"
     name: 'Full build linux-${{ matrix.arch }}'
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: cargo build
-      run: cargo make build
+      - name: cargo build
+        run: cargo make build
 
   full-test:
     runs-on: ubuntu-latest
@@ -171,25 +173,25 @@ jobs:
       TARGET_ARCH: "${{ matrix.arch }}"
     name: 'Full test linux-${{ matrix.arch }}'
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: 'cargo test'
-      run: cargo make test
+      - name: 'cargo test'
+        run: cargo make test
 
   full-clippy:
     runs-on: ubuntu-latest
@@ -202,22 +204,22 @@ jobs:
       TARGET_ARCH: "${{ matrix.arch }}"
     name: 'Full clippy linux-${{ matrix.arch }}'
     steps:
-    - name: harden runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
-      with:
-        egress-policy: audit
+      - name: harden runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          egress-policy: audit
 
-    - name: checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.0
-      with:
-        submodules: recursive
-        persist-credentials: false
+      - name: checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
 
-    - name: Restore cached cargo-make
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: ~/.cargo/bin/cargo-make
-        key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
+      - name: Restore cached cargo-make
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
 
-    - name: 'cargo clippy'
-      run: cargo make clippy
+      - name: 'cargo clippy'
+        run: cargo make clippy

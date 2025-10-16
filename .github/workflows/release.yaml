@@ -8,7 +8,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: read # Default token to read
 
 jobs:
   release-plz-release:
@@ -16,17 +16,17 @@ jobs:
     name: Release-plz release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
+      contents: write # Needed to write release artifacts
+      id-token: write # Needed for trusted publishing
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # zizmor: ignore[stale-action-refs] -- pinned to stable branch
 
       - name: generate cultivator token
         uses: actions/create-github-app-token@21cfef2b496dd8ef5b904c159339626a10ad380e # v1.11.6
@@ -47,21 +47,21 @@ jobs:
     name: Release-plz PR
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
+      contents: write      # Needed to write release artifacts
+      id-token: write      # Needed for trusted publishing
+      pull-requests: write # Needed to create pull requests
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # zizmor: ignore[stale-action-refs] -- pinned to stable branch
 
       - name: generate cultivator token
         uses: actions/create-github-app-token@21cfef2b496dd8ef5b904c159339626a10ad380e # v1.11.6
@@ -76,4 +76,3 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
-
