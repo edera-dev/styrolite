@@ -1,7 +1,7 @@
 [workspace]
 pr_branch_prefix = "release/"
 pr_labels = ["release"]
-release_always = false
+release_always = true
 git_release_enable = false
 git_tag_enable = false
 changelog_update = false
