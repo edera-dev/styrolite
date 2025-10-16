@@ -12,6 +12,16 @@ skip_core_tasks = true
 # default profile
 [env]
 STYROLITE_BUILD_FLAGS = ""
+# TODO(found-it): support more than just linux when it makes sense
+TARGET_ARCH = { condition.env_not_set = ["TARGET_ARCH"], value = "x86_64" }
+TARGET_LIBC = { condition.env_not_set = ["TARGET_LIBC"], value = "musl" }
+TARGET_VENDOR = { condition.env_not_set = ["TARGET_VENDOR"], value = "unknown" }
+CARGO_BUILD_TARGET = { condition.env_not_set = [
+  "CARGO_BUILD_TARGET",
+], value = "${TARGET_ARCH}-${TARGET_VENDOR}-linux-${TARGET_LIBC}" }
+RUSTFLAGS = { condition.env_not_set = [
+  "RUSTFLAGS",
+], value = "-Ctarget-feature=+crt-static" }
 
 # release profile
 # Use with: cargo make --profile release <task>
@@ -25,6 +35,7 @@ STYROLITE_BUILD_FLAGS = "--release"
 install_crate = "clippy"
 command = "cargo"
 args = ["clippy"]
+dependencies = ["rustup-target-add"]
 
 [tasks.format]
 install_crate = "rustfmt"
@@ -40,13 +51,19 @@ args = ["fmt", "--all", "--", "--check"]
 command = "cargo"
 args = ["clean"]
 
+[tasks.rustup-target-add]
+command = "rustup"
+args = ["target", "add", "${CARGO_BUILD_TARGET}"]
+
 [tasks.build]
 command = "cargo"
 args = ["build", "@@split(STYROLITE_BUILD_FLAGS, )"]
+dependencies = ["rustup-target-add"]
 
 [tasks.test]
 command = "cargo"
 args = ["test"]
+dependencies = ["rustup-target-add"]
 
 [tasks.ci]
 dependencies = [
