@@ -19,10 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-        - { os: linux, arch: x86_64, on: ubuntu-latest }
+        - { os: linux, arch: x86_64, libc: musl, on: ubuntu-latest }
     env:
       TARGET_OS: '${{ matrix.platform.os }}'
       TARGET_ARCH: '${{ matrix.platform.arch }}'
+      TARGET_LIBC: '${{ matrix.platform.libc }}'
     runs-on: '${{ matrix.platform.on }}'
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -51,19 +52,17 @@ jobs:
           [ -z $tag_name ] && tag_name="${DEFAULT_BRANCH}"
           export STYROLITE_FORM='styrolite'
           export STYROLITE_TAG_NAME="${tag_name}"
-          export STYROLITE_PLATFORM="${PLATFORM_OS}-${PLATFORM_ARCH}"
-          export STYROLITE_RELEASE_DIR='target/release'
+          export STYROLITE_PLATFORM="${TARGET_OS}-${TARGET_ARCH}-${TARGET_LIBC}"
+          export STYROLITE_RELEASE_DIR='target/*/release'
           cargo make --profile release assemble-release-assets
         env:
           TAG_NAME: '${{ github.event.release.tag_name }}'
           DEFAULT_BRANCH: '${{ github.event.repository.default_branch }}'
-          PLATFORM_OS: '${{ matrix.platform.os }}'
-          PLATFORM_ARCH: '${{ matrix.platform.arch }}'
 
       - name: 'Upload styrolite to workflow run'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: styrolite-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          name: styrolite-${{ matrix.platform.os }}-${{ matrix.platform.arch }}-${{ matrix.platform.libc }}
           path: |
             target/assets/*
 
