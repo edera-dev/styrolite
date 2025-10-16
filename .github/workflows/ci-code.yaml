@@ -23,6 +23,11 @@ jobs:
       cargo_make_version: ${{ steps.get-version.outputs.cargo_make_version }}
       cache-key: ${{ steps.cache-cargo-make.outputs.cache-primary-key }}
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Fetch latest cargo-make version
         id: get-version
         run: |
