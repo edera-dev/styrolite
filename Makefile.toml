@@ -1,0 +1,133 @@
+
+#
+# Cargo Make Configuration
+#
+[config]
+reduce_output = false
+skip_core_tasks = true
+
+#
+# Environment and Profile Setup
+#
+# default profile
+[env]
+STYROLITE_BUILD_FLAGS = ""
+
+# release profile
+# Use with: cargo make --profile release <task>
+[env.release]
+STYROLITE_BUILD_FLAGS = "--release"
+
+#
+# Tasks
+#
+[tasks.clippy]
+install_crate = "clippy"
+command = "cargo"
+args = ["clippy"]
+
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--", "--emit=files"]
+
+[tasks.format-check]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.build]
+command = "cargo"
+args = ["build", "@@split(STYROLITE_BUILD_FLAGS, )"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+[tasks.ci]
+dependencies = [
+  "format-check",
+  "clippy",
+  "build",
+  "test",
+  "shellcheck",
+  "shfmt",
+]
+
+[tasks.shellcheck-exists]
+script = '''
+if ! command -v shellcheck; then
+  echo "please install shellcheck"
+  exit 1
+fi
+'''
+
+[tasks.shellcheck]
+command = "./hack/code/shellcheck.sh"
+dependencies = ["shellcheck-exists"]
+
+[tasks.shfmt-exists]
+script = '''
+if ! command -v shfmt; then
+  echo "please install shfmt"
+  exit 1
+fi
+'''
+
+[tasks.shfmt]
+command = "./hack/code/shfmt.sh"
+dependencies = ["shfmt-exists"]
+
+[tasks.shfmt-write]
+env = { STYROLITE_SHFMT_WRITE = "true" }
+command = "./hack/code/shfmt.sh"
+dependencies = ["shfmt-exists"]
+
+[tasks.zizmor-exists]
+script = '''
+if ! command -v zizmor; then
+  echo "please install zizmor"
+  exit 1
+fi
+'''
+
+[tasks.zizmor]
+script = '''
+GH_TOKEN=$(gh auth token) zizmor --pedantic .
+'''
+dependencies = ["check-gh-installed", "zizmor-exists"]
+
+#
+# Release Tasks
+#
+[tasks.assets-exist]
+script = '''
+if [ ! -d ./target/assets ]; then
+  echo "./target/assets does not exist"
+  exit 1
+fi
+'''
+
+[tasks.release-exists]
+script = '''
+if [ ! -d ./target/release ]; then
+  echo "./target/release does not exist"
+  exit 1
+fi
+'''
+
+[tasks.assemble-release-assets]
+command = "./hack/ci/assemble-release-assets.sh"
+dependencies = ["release-exists"]
+
+[tasks.check-gh-installed]
+command = "which"
+args = ["gh"]
+
+[tasks.upload-release-assets]
+command = "./hack/ci/upload-release-assets.sh"
+dependencies = ["check-gh-installed", "assets-exist"]
