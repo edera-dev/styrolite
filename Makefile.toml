@@ -19,9 +19,10 @@ TARGET_VENDOR = { condition.env_not_set = ["TARGET_VENDOR"], value = "unknown" }
 CARGO_BUILD_TARGET = { condition.env_not_set = [
   "CARGO_BUILD_TARGET",
 ], value = "${TARGET_ARCH}-${TARGET_VENDOR}-linux-${TARGET_LIBC}" }
-RUSTFLAGS = { condition.env_not_set = [
-  "RUSTFLAGS",
+RUSTFLAG_STATIC = { condition.env_true = [
+  "STATIC_BINARY",
 ], value = "-Ctarget-feature=+crt-static" }
+RUSTFLAGS = { script = ["echo ${RUSTFLAG_STATIC}"] }
 
 # release profile
 # Use with: cargo make --profile release <task>
