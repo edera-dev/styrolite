@@ -16,6 +16,7 @@ on:
       - src/**
       - Cargo.*
       - rust-toolchain.toml
+      - .github/workflows/publish.yaml
 
 permissions:
   contents: read # Default token to read
