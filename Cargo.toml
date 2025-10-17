@@ -2,7 +2,7 @@
 name = "styrolite"
 description = "Lightweight, programmatic sandboxing tool"
 license = "Apache-2.0"
-version = "0.1.1"
+version = "0.1.2"
 homepage = "https://github.com/edera-dev/styrolite"
 repository = "https://github.com/edera-dev/styrolite"
 edition = "2024"
