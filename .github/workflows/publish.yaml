@@ -6,6 +6,18 @@ on:
     types:
     - published
 
+  # Run on pull requests to publish binaries to pull request workflow runs
+  pull_request:
+    branches:
+      - main
+    paths:
+      - bin/**
+      - examples/**
+      - src/**
+      - Cargo.*
+      - rust-toolchain.toml
+      - .github/workflows/publish.yaml
+
 permissions:
   contents: read # Default token to read
 
@@ -19,11 +31,14 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-        - { os: linux, arch: x86_64, libc: musl, on: ubuntu-latest }
+        - { os: linux, arch: x86_64, libc: musl, static: true, on: ubuntu-latest }
+        - { os: linux, arch: x86_64, libc: gnu, static: true, on: ubuntu-latest }
+        - { os: linux, arch: x86_64, libc: gnu, static: false, on: ubuntu-latest }
     env:
       TARGET_OS: '${{ matrix.platform.os }}'
       TARGET_ARCH: '${{ matrix.platform.arch }}'
       TARGET_LIBC: '${{ matrix.platform.libc }}'
+      STATIC_BINARY: '${{ matrix.platform.static }}'
     runs-on: '${{ matrix.platform.on }}'
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -46,23 +61,34 @@ jobs:
       - name: 'Build binary'
         run: cargo make --profile release build
 
+      - name: 'Set platform name'
+        id: name
+        run: |
+          platform="${TARGET_OS}-${TARGET_ARCH}-${TARGET_LIBC}"
+
+          # Adding -static to a musl binary name is redundant
+          [ "${STATIC_BINARY}" = "true" ] && [ "${TARGET_LIBC}" != "musl" ] && platform="${platform}-static"
+
+          echo "platform=$platform" >> $GITHUB_OUTPUT
+
       - name: 'Assemble styrolite executable'
         run: |
           tag_name="${TAG_NAME}"
           [ -z $tag_name ] && tag_name="${DEFAULT_BRANCH}"
           export STYROLITE_FORM='styrolite'
           export STYROLITE_TAG_NAME="${tag_name}"
-          export STYROLITE_PLATFORM="${TARGET_OS}-${TARGET_ARCH}-${TARGET_LIBC}"
+          export STYROLITE_PLATFORM
           export STYROLITE_RELEASE_DIR='target/*/release'
           cargo make --profile release assemble-release-assets
         env:
           TAG_NAME: '${{ github.event.release.tag_name }}'
           DEFAULT_BRANCH: '${{ github.event.repository.default_branch }}'
+          STYROLITE_PLATFORM: '${{ steps.name.outputs.platform }}'
 
       - name: 'Upload styrolite to workflow run'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: styrolite-${{ matrix.platform.os }}-${{ matrix.platform.arch }}-${{ matrix.platform.libc }}
+          name: styrolite-${{ steps.name.outputs.platform }}
           path: |
             target/assets/*
 
@@ -74,6 +100,7 @@ jobs:
           private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
 
       - name: 'Upload all release artifacts'
+        if: ${{ github.event_name == 'release' }}
         run: |
           export STYROLITE_TAG_NAME="${TAG_NAME}"
           cargo make --profile release upload-release-assets
