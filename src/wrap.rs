@@ -207,6 +207,11 @@ impl CreateRequest {
         let _: Vec<_> = limits
             .into_iter()
             .map(|(k, v)| {
+                if k.starts_with("cgroup.") {
+                    warn!("attempt to set invalid resource limit '{k}' was blocked");
+                    return;
+                }
+
                 debug!("configuring resource limit {k} = {v}");
                 match subtree.clone().set_child_value(&k, &v) {
                     Ok(_) => (),
