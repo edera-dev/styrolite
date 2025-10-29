@@ -18,10 +18,11 @@ use crate::config::{
     MountSpec, Mountable, Mutatable, Mutation, Wrappable,
 };
 use crate::namespace::Namespace;
+use crate::signal;
 use crate::unshare::{setns, unshare};
 use anyhow::{Result, anyhow, bail};
 use libc::{PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, c_int, prctl};
-use log::{debug, warn};
+use log::{debug, error, warn};
 
 // We have to do this because the libc crate does not consistently provide
 // bindings for setrlimit(2).  Non-GNU uses signed i32 for resource enums,
@@ -376,11 +377,19 @@ impl Wrappable for CreateRequest {
             warn!("unable to set process limits");
         }
 
+        debug!("setting up parent signal handlers");
+        if let Err(e) = unsafe { signal::setup_parent_signal_handlers() } {
+            warn!("unable to set up parent signal handlers: {e}");
+            process::exit(1)
+        }
+
         debug!("all namespaces unshared -- forking child");
         let parent_efd = unsafe { libc::eventfd(0, libc::EFD_SEMAPHORE) };
         let child_efd = unsafe { libc::eventfd(0, libc::EFD_SEMAPHORE) };
         let pid = unsafe { libc::fork() };
         if pid > 0 {
+            signal::store_child_pid(pid);
+
             debug!("child pid = {pid}");
             let mut pef = unsafe { File::from_raw_fd(parent_efd) };
             debug!("parent efd = {parent_efd}");
@@ -404,6 +413,11 @@ impl Wrappable for CreateRequest {
             let exitcode = wait_for_pid(pid)?;
             debug!("[pid {pid}] exitcode = {exitcode}");
             process::exit(exitcode);
+        }
+
+        if let Err(e) = unsafe { signal::reset_child_signal_handlers() } {
+            error!("Failed to reset child signal handlers: {e}");
+            process::exit(1);
         }
 
         if target_ns.contains(&Namespace::Mount) {
