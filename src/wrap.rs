@@ -72,12 +72,23 @@ fn wait_for_pid(pid: libc::pid_t) -> Result<i32> {
 }
 
 fn fork_and_wait() -> Result<()> {
+    if let Err(e) = unsafe { signal::setup_parent_signal_handlers() } {
+        warn!("unable to set up parent signal handlers: {e}");
+        process::exit(1)
+    }
+
     let pid = unsafe { libc::fork() };
     if pid > 0 {
+        signal::store_child_pid(pid);
         debug!("child pid = {pid}");
         let exitcode = wait_for_pid(pid)?;
         debug!("[pid {pid}] exitcode = {exitcode}");
         process::exit(exitcode);
+    }
+
+    if let Err(e) = unsafe { signal::reset_child_signal_handlers() } {
+        error!("Failed to reset child signal handlers: {e}");
+        process::exit(1);
     }
 
     Ok(())
