@@ -362,7 +362,7 @@ impl Runner {
     /// Run the specified container.
     /// Returns exit code on success, else error.
     pub fn run<T: Configurable>(&self, config: T) -> Result<i32> {
-        let mut config_file = TempFile::new("litewrap-cfg-", ".json")?;
+        let mut config_file = TempFile::new("styrolite-cfg-", ".json")?;
         self.write_config(config, &mut config_file)?;
 
         let status = self.create_command(&config_file)?.status()?;
@@ -375,7 +375,7 @@ impl Runner {
 
     #[cfg(feature = "async")]
     pub async fn run_async<T: Configurable>(&self, config: T) -> Result<i32> {
-        let mut config_file = TempFile::new("litewrap-cfg-", ".json")?;
+        let mut config_file = TempFile::new("styrolite-cfg-", ".json")?;
         self.write_config(config, &mut config_file)?;
 
         let status = self.create_command_async(&config_file)?.status().await?;

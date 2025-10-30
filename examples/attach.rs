@@ -10,7 +10,7 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        println!("usage: attach path-to-litewrap-bin target-pid");
+        println!("usage: attach path-to-styrolite-bin target-pid");
         std::process::exit(1);
     }
 

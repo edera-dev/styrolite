@@ -11,7 +11,7 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        println!("usage: rundir path-to-litewrap-bin path-to-rootfs");
+        println!("usage: rundir path-to-styrolite-bin path-to-rootfs");
         std::process::exit(1);
     }
 
