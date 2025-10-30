@@ -175,7 +175,7 @@ impl CreateRequest {
             .expect("unable to determine a workload identity");
         let final_hostname = match &self.hostname {
             Some(hostname) => hostname.to_string(),
-            None => format!("litewrap-{wid}"),
+            None => format!("styrolite-{wid}"),
         };
         let final_hostname_cstr =
             CString::new(final_hostname).expect("unable to parse hostname as valid C string");
@@ -201,7 +201,7 @@ impl CreateRequest {
             .clone()
             .unwrap_or("/sys/fs/cgroup".to_string());
         let cgroot = CGroup::open(&cgbase)?;
-        let subtree = cgroot.create_child(format!("litewrap-{}", self.identity()?))?;
+        let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
         let limits = self.limits.clone().unwrap();
 
         let _: Vec<_> = limits
@@ -324,12 +324,12 @@ impl Wrappable for CreateRequest {
     /// Execute a process according to the wrap config specified.
     /// This function should eventually result in an execve.
     /// All streams of stdin/stdout/stderr that were requested in the config
-    /// should be bound to the corresponding litewrap process fds.
+    /// should be bound to the corresponding styrolite process fds.
     /// For simplicity, the zone workload management handles ptys.
     /// If a tty is needed, it will be connected to this process already. Error handling should bubble up.
     ///
     /// Exit code of this process should match the exit code of the process to run.
-    /// For simplicity, litewrap should not currently act as a reaper. tini can do that for now.
+    /// For simplicity, styrolite should not currently act as a reaper. tini can do that for now.
     fn wrap(&self) -> Result<()> {
         debug!("executing with config {self:?}");
 
@@ -557,7 +557,7 @@ impl AttachRequest {
             .clone()
             .unwrap_or("/sys/fs/cgroup".to_string());
         let cgroot = CGroup::open(&cgbase)?;
-        let subtree = cgroot.create_child(format!("litewrap-{}", self.identity()?))?;
+        let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
 
         debug!("binding supervisor (pid {pid}) to cgroup");
         subtree

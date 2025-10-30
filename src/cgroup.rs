@@ -17,26 +17,26 @@
 //! In other words, in a shell we would do for example:
 //!
 //! ```sh
-//! % mkdir /sys/fs/cgroup/litewrap-1000
-//! % chown -R 1000:1000 /sys/fs/cgroup/litewrap-1000
-//! % echo "+memory +cpu" > /sys/fs/cgroup/litewrap-1000/cgroup.subtree_control
+//! % mkdir /sys/fs/cgroup/styrolite-1000
+//! % chown -R 1000:1000 /sys/fs/cgroup/styrolite-1000
+//! % echo "+memory +cpu" > /sys/fs/cgroup/styrolite-1000/cgroup.subtree_control
 //! ```
 //!
 //! From there, our hypothetical user with UID 1000 could create
 //! their own control groups:
 //!
 //! ```sh
-//! $ mkdir /sys/fs/cgroup/litewrap-1000/a
-//! $ echo 100M > /sys/fs/cgroup/litewrap-1000/a/memory.max
+//! $ mkdir /sys/fs/cgroup/styrolite-1000/a
+//! $ echo 100M > /sys/fs/cgroup/styrolite-1000/a/memory.max
 //! ```
 //!
 //! Then we can bind a PID to the cgroup:
 //!
 //! ```sh
-//! $ echo 12345 >> /sys/fs/cgroup/litewrap-1000/a/cgroup.procs
+//! $ echo 12345 >> /sys/fs/cgroup/styrolite-1000/a/cgroup.procs
 //! ```
 //!
-//! In litewrap, we move the supervisor (litewrap-bin) into the
+//! In styrolite, we move the supervisor (styrolite-bin) into the
 //! configured cgroup.  This is because it allows us to guarantee
 //! that supervised processes automatically get spawned into the
 //! correct cgroup without any race conditions.
