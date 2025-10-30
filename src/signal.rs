@@ -2,7 +2,6 @@ use anyhow::{Result, anyhow};
 use log::debug;
 use nix::sys::signal::{self, SigHandler, Signal};
 use nix::unistd::Pid;
-use std::sync::atomic::{AtomicI32, Ordering};
 
 /// Set of signals forwarded from the parent to the child
 const FORWARDED_SIGNALS: &[Signal] = &[
@@ -14,13 +13,14 @@ const FORWARDED_SIGNALS: &[Signal] = &[
     Signal::SIGUSR2,
 ];
 
-/// Stored child pid used by the parent signal handler to forward signals
-static CHILD_PID: AtomicI32 = AtomicI32::new(0);
+/// Stored child pid used by the parent signal handler to forward signals.
+/// Styrolite is single threaded so this is safe to access.
+static mut CHILD_PID: i32 = 0;
 
 /// forward_signal loads the stored child pid and then kills the child with the
 /// trapped signal.
 extern "C" fn forward_signal(signum: i32) {
-    let pid = CHILD_PID.load(Ordering::SeqCst);
+    let pid = unsafe { CHILD_PID };
 
     if pid <= 0 {
         return;
@@ -74,5 +74,5 @@ pub unsafe fn reset_child_signal_handlers() -> Result<()> {
 /// forward signals.
 pub fn store_child_pid(pid: i32) {
     debug!("Registering child PID {pid} for signal forwarding");
-    CHILD_PID.store(pid, Ordering::SeqCst);
+    unsafe { CHILD_PID = pid }
 }
