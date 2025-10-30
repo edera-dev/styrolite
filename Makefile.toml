@@ -56,10 +56,15 @@ args = ["clean"]
 command = "rustup"
 args = ["target", "add", "${CARGO_BUILD_TARGET}"]
 
+[tasks.examples]
+command = "cargo"
+args = ["build", "@@split(STYROLITE_BUILD_FLAGS, )", "--examples"]
+dependencies = ["rustup-target-add"]
+
 [tasks.build]
 command = "cargo"
 args = ["build", "@@split(STYROLITE_BUILD_FLAGS, )"]
-dependencies = ["rustup-target-add"]
+dependencies = ["rustup-target-add", "examples"]
 
 [tasks.test]
 command = "cargo"
@@ -75,6 +80,48 @@ dependencies = [
   "shellcheck",
   "shfmt",
 ]
+
+[tasks.example-attach]
+env = { ATTACH_PID = { condition.env_not_set = [
+  "ATTACH_PID",
+], script = [
+  '''
+    echo "Please set ATTACH_PID to the pid you'd like to attach with this example"
+    exit 1
+''',
+] } }
+script = '''
+echo "Using $ATTACH_PID"
+sudo ./target/x86_64-unknown-linux-musl/debug/examples/styrolite-attach \
+  $PWD/target/x86_64-unknown-linux-musl/debug/styrolite \
+  $ATTACH_PID
+'''
+dependencies = ["build"]
+
+[tasks.example-rundir-alpine]
+env = { ALPINE_ROOTFS = { condition.env_not_set = [
+  "ALPINE_ROOTFS",
+], script = [
+  '''
+    alpine_rootfs=$PWD/local/alpine
+    if [ -d "${alpine_rootfs}" ]; then
+      echo "${alpine_rootfs}"
+      return
+    fi
+
+    mkdir -p "${alpine_rootfs}"
+    curl --retry 4 --fail -o "${alpine_rootfs}/alpine-minirootfs.tar.gz" https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/x86_64/alpine-minirootfs-3.22.2-x86_64.tar.gz
+    cd "${alpine_rootfs}" && tar xzvf alpine-minirootfs.tar.gz && cd -
+    echo $PWD/local/alpine
+''',
+] } }
+script = '''
+echo "Using $ALPINE_ROOTFS"
+sudo ./target/x86_64-unknown-linux-musl/debug/examples/styrolite-rundir \
+  $PWD/target/x86_64-unknown-linux-musl/debug/styrolite \
+  $ALPINE_ROOTFS
+'''
+dependencies = ["build"]
 
 [tasks.shellcheck-exists]
 script = '''

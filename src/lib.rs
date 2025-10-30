@@ -4,5 +4,6 @@ pub mod config;
 pub mod mount;
 pub mod namespace;
 pub mod runner;
+pub mod signal;
 pub mod unshare;
 pub mod wrap;
