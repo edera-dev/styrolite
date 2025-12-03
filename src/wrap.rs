@@ -56,6 +56,12 @@ fn set_process_limit(resource: RLimit, limit: Option<u64>) -> Result<()> {
     }
 }
 
+fn reap_children() -> Result<()> {
+    while unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) } > 0 {}
+
+    Ok(())
+}
+
 fn wait_for_pid(pid: libc::pid_t) -> Result<i32> {
     let status = unsafe {
         let mut st: MaybeUninit<i32> = MaybeUninit::uninit();
@@ -83,6 +89,8 @@ fn fork_and_wait() -> Result<()> {
         debug!("child pid = {pid}");
         let exitcode = wait_for_pid(pid)?;
         debug!("[pid {pid}] exitcode = {exitcode}");
+        debug!("reaping children of supervisor!");
+        reap_children()?;
         process::exit(exitcode);
     }
 
@@ -423,6 +431,10 @@ impl Wrappable for CreateRequest {
 
             let exitcode = wait_for_pid(pid)?;
             debug!("[pid {pid}] exitcode = {exitcode}");
+
+            debug!("reaping children of supervisor!");
+            reap_children()?;
+
             process::exit(exitcode);
         }
 
