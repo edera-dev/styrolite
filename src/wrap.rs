@@ -683,7 +683,6 @@ fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
         CapabilityBit::set_bits(current_capabilities.effective, &raises);
     current_capabilities.permitted = current_capabilities.effective;
     current_capabilities.inheritable = current_capabilities.effective;
-    debug!("current caps: {:#?}", current_capabilities);
     set_caps(current_capabilities)?;
 
     for drop in &drops {
