@@ -21,7 +21,9 @@ use crate::namespace::Namespace;
 use crate::signal;
 use crate::unshare::{setns, unshare};
 use anyhow::{Result, anyhow, bail};
-use libc::{PR_CAPBSET_DROP, PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, c_int, prctl};
+use libc::{
+    PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, PR_CAPBSET_DROP, c_int, prctl,
+};
 
 use log::{debug, error, warn};
 
@@ -659,15 +661,7 @@ fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
 
     for drop in &drops {
         if !raises.contains(drop) && !raises_ambient.contains(drop) {
-            let error = unsafe {
-                prctl(
-                    PR_CAPBSET_DROP,
-                    drop.to_cap_number() as c_int,
-                    0,
-                    0,
-                    0,
-                )
-            };
+            let error = unsafe { prctl(PR_CAPBSET_DROP, drop.to_cap_number() as c_int, 0, 0, 0) };
             if error != 0 {
                 bail!(
                     "failed to drop bounding capability: {}",
