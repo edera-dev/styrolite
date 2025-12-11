@@ -214,41 +214,58 @@ impl CreateRequest {
     }
 
     fn prepare_cgroup(&self) -> Result<()> {
-        if self.limits.is_none() {
+        // If we haven't been given a cgroup OR limits, nothing to do here.
+        if self.limits.is_none() && self.cgroupfs.is_none() {
+            debug!("skipping prepare_cgroup");
             return Ok(());
         }
 
+        debug!(
+            "prepare_cgroup - limits: {:?} cgroupfs: {:?}",
+            self.limits, self.cgroupfs
+        );
         let pid = process::id();
         let cgbase = self
             .cgroupfs
             .clone()
             .unwrap_or("/sys/fs/cgroup".to_string());
         let cgroot = CGroup::open(&cgbase)?;
-        let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
-        let limits = self.limits.clone().unwrap();
 
-        let _: Vec<_> = limits
-            .into_iter()
-            .map(|(k, v)| {
-                if k.starts_with("cgroup.") {
-                    warn!("attempt to set invalid resource limit '{k}' was blocked");
-                    return;
-                }
+        if let Some(limits) = self.limits.clone() {
+            // if we have been given limits and a cgroup, create a subtree cgroup,
+            // set limits on it, and move ourselves into it.
+            let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
 
-                debug!("configuring resource limit {k} = {v}");
-                match subtree.clone().set_child_value(&k, &v) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        warn!("unable to set resource limit '{k}': {e:?}");
+            let _: Vec<_> = limits
+                .into_iter()
+                .map(|(k, v)| {
+                    if k.starts_with("cgroup.") {
+                        warn!("attempt to set invalid resource limit '{k}' was blocked");
+                        return;
                     }
-                }
-            })
-            .collect();
 
-        debug!("binding supervisor (pid {pid}) to cgroup");
-        subtree
-            .clone()
-            .set_child_value("cgroup.procs", &format!("{pid}"))?;
+                    debug!("configuring resource limit {k} = {v}");
+                    match subtree.clone().set_child_value(&k, &v) {
+                        Ok(_) => (),
+                        Err(e) => {
+                            warn!("unable to set resource limit '{k}': {e:?}");
+                        }
+                    }
+                })
+                .collect();
+            debug!(
+                "binding supervisor (pid {pid}) to subtree cgroup: {:?}",
+                subtree
+            );
+            subtree
+                .clone()
+                .set_child_value("cgroup.procs", &format!("{pid}"))?;
+        } else {
+            // if we have been given a cgroup and *no* limits, just make sure we
+            // move ourselves into it.
+            debug!("binding supervisor (pid {pid}) to cgroup: {:?}", cgroot);
+            cgroot.set_child_value("cgroup.procs", &format!("{pid}"))?;
+        }
 
         Ok(())
     }
@@ -371,8 +388,8 @@ impl Wrappable for CreateRequest {
             "maybe create a new supervisor cgroup for workload identity {}",
             self.identity()?
         );
-        if self.prepare_cgroup().is_err() {
-            warn!("unable to set resource limits, cgroup access denied!");
+        if let Err(e) = self.prepare_cgroup() {
+            warn!("unable to prepare cgroup: {e}");
         }
 
         let first_level_ns = target_ns
