@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Error, Result, bail};
 use libc::{AT_EACCESS, AT_FDCWD, F_OK, c_char, faccessat};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CGroup {
     /// The root (or delegated root) of the cgroup2 tree.
     root: String,
