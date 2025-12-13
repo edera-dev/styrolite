@@ -234,6 +234,36 @@ impl CreateRequest {
         if let Some(limits) = self.limits.clone() {
             // if we have been given limits and a cgroup, create a subtree cgroup,
             // set limits on it, and move ourselves into it.
+
+            // Ensure the correct controllers are enabled for limits we want to set
+            // in our subtree, and attempt to enable them if not.
+            let controller_string = limits
+                .keys()
+                .filter_map(|key| {
+                    key.split('.')
+                        .next()
+                        .filter(|prefix| matches!(*prefix, "cpu" | "memory" | "io" | "pids"))
+                })
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .map(|c| format!("+{}", c))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            if !controller_string.is_empty() {
+                debug!(
+                    "enabling controllers in provided cgroup: {}",
+                    controller_string
+                );
+
+                if let Err(e) = cgroot
+                    .clone()
+                    .set_child_value("cgroup.subtree_control", &controller_string)
+                {
+                    warn!("could not enable controllers in provided cgroup: {e:?}");
+                }
+            }
+
             let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
 
             let _: Vec<_> = limits
