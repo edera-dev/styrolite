@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   upload-artifact:
-    if: ${{ github.repository_owner == 'edera-dev' }}
+    if: ${{ github.repository_owner == 'edera-dev' && (github.event_name == 'release' || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Publish Binary
     permissions:
       contents: write # Needed to publish binary
