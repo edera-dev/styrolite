@@ -643,8 +643,19 @@ impl AttachRequest {
             .cgroupfs
             .clone()
             .unwrap_or("/sys/fs/cgroup".to_string());
-        let cgroot = CGroup::open(&cgbase)?;
-        let subtree = cgroot.create_child(format!("styrolite-{}", self.identity()?))?;
+        let name = format!("styrolite-{}", self.identity()?);
+
+        let mut path = PathBuf::from(&cgbase);
+        path.push(&name);
+
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let path_str = path
+            .to_str()
+            .ok_or(anyhow!("path is somehow not valid utf-8"))?;
+        let subtree = CGroup::open(path_str)?;
 
         debug!("binding supervisor (pid {pid}) to cgroup");
         subtree
