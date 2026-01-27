@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process;
 use std::ptr;
 
-use crate::caps::{CapabilityBit, get_caps, set_caps};
+use crate::caps::{CapabilityBit, get_caps, set_caps, set_keep_caps};
 use crate::cgroup::CGroup;
 use crate::config::{
     AttachRequest, Capabilities, CreateDirMutation, CreateRequest, ExecutableSpec, IdMapping,
@@ -508,8 +508,6 @@ impl Wrappable for CreateRequest {
             unshare(&vec![Namespace::User])?;
         }
 
-        apply_capabilities(self.capabilities.as_ref())?;
-
         debug!("signalling supervisor to do configuration");
         pef.write_all(&2_u64.to_ne_bytes())?;
         pef.flush()?;
@@ -519,6 +517,17 @@ impl Wrappable for CreateRequest {
         let mut cef = unsafe { File::from_raw_fd(child_efd) };
         let mut buf = [0u8; 8];
         cef.read_exact(&mut buf)?;
+
+        // We need to toggle SECBIT before we change UID/GID,
+        // or else changing UID/GID may cause us to lose the capabilities
+        // we need to explicitly drop capabilities later on.
+        set_keep_caps()?;
+        // Set these *first*, before we exec. Otherwise
+        // we may not be able to switch after dropping caps.
+        apply_gid_uid(self.exec.gid, self.exec.uid)?;
+        // Now, we can synchronize effective/inherited/permitted caps
+        // as a final step.
+        apply_capabilities(self.capabilities.as_ref())?;
 
         debug!("ready to launch workload");
         self.exec.execute()
@@ -555,26 +564,6 @@ impl ExecutableSpec {
         };
         let mut env_charptrs: Vec<_> = env_cstrings.iter().map(|arg| arg.as_ptr()).collect();
         env_charptrs.push(ptr::null());
-
-        if let Some(target_uid) = self.uid {
-            unsafe {
-                // Check this to avoid a spurious log if we don't need to change,
-                // because we are already running as the target UID.
-                if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
-                    warn!("unable to set target UID: {:?}", Error::last_os_error());
-                }
-            }
-        }
-
-        if let Some(target_gid) = self.gid {
-            unsafe {
-                // Check this to avoid a spurious log if we don't need to change,
-                // because we are already running as the target GID.
-                if libc::getgid() != target_gid && libc::setgid(target_gid as libc::gid_t) < 0 {
-                    warn!("unable to set target GID: {:?}", Error::last_os_error());
-                }
-            }
-        }
 
         if let Some(wd) = &self.working_directory {
             env::set_current_dir(wd.clone())?;
@@ -716,6 +705,32 @@ impl Mutatable for CreateDirMutation {
 
         Ok(fs::create_dir_all(path)?)
     }
+}
+
+fn apply_gid_uid(gid: Option<u32>, uid: Option<u32>) -> Result<()> {
+    // NOTE - order is important here - must change GID *before* changing UID, to avoid
+    // locking oneself out of the GID change with an "operation not permitted" error
+    if let Some(target_gid) = gid {
+        unsafe {
+            // Check this to avoid a spurious log if we don't need to change,
+            // because we are already running as the target GID.
+            if libc::getgid() != target_gid && libc::setgid(target_gid as libc::gid_t) < 0 {
+                warn!("unable to set target GID: {:?}", Error::last_os_error());
+            }
+        }
+    }
+
+    if let Some(target_uid) = uid {
+        unsafe {
+            // Check this to avoid a spurious log if we don't need to change,
+            // because we are already running as the target UID.
+            if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
+                warn!("unable to set target UID: {:?}", Error::last_os_error());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {

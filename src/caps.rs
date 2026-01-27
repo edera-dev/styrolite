@@ -219,6 +219,7 @@ impl AsRef<str> for CapabilityBit {
 
 pub const PR_SET_SECUREBITS: i32 = 28;
 pub const SECBIT_KEEP_CAPS: i32 = 16;
+pub const SECBIT_NO_SETUID_FIXUP: i32 = 4;
 pub const SECBIT_KEEP_CAPS_LOCKED: i32 = 32;
 
 /* from <unistd.h> */
@@ -418,10 +419,10 @@ pub fn set_caps(caps: CapResult) -> anyhow::Result<()> {
 }
 
 pub fn set_keep_caps() -> anyhow::Result<()> {
-    let ret = unsafe { libc::prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS) };
+    let ret = unsafe { libc::prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP) };
     if ret < 0 {
         Err(anyhow!(
-            "failed to set SECBIT_KEEP_CAPS: {}",
+            "failed to set SECBIT_NO_SETUID_FIXUP: {}",
             io::Error::last_os_error()
         ))
     } else {
