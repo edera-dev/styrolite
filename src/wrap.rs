@@ -556,22 +556,24 @@ impl ExecutableSpec {
         let mut env_charptrs: Vec<_> = env_cstrings.iter().map(|arg| arg.as_ptr()).collect();
         env_charptrs.push(ptr::null());
 
-        if let Some(target_uid) = self.uid {
-            unsafe {
-                // Check this to avoid a spurious log if we don't need to change,
-                // because we are already running as the target UID.
-                if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
-                    warn!("unable to set target UID: {:?}", Error::last_os_error());
-                }
-            }
-        }
-
+        // NOTE - order is important here - must change GID *before* changing UID, to avoid
+        // locking oneself out of the GID change with an "operation not permitted" error
         if let Some(target_gid) = self.gid {
             unsafe {
                 // Check this to avoid a spurious log if we don't need to change,
                 // because we are already running as the target GID.
                 if libc::getgid() != target_gid && libc::setgid(target_gid as libc::gid_t) < 0 {
                     warn!("unable to set target GID: {:?}", Error::last_os_error());
+                }
+            }
+        }
+
+        if let Some(target_uid) = self.uid {
+            unsafe {
+                // Check this to avoid a spurious log if we don't need to change,
+                // because we are already running as the target UID.
+                if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
+                    warn!("unable to set target UID: {:?}", Error::last_os_error());
                 }
             }
         }
