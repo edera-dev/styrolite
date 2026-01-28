@@ -70,7 +70,7 @@ jobs:
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v4
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
