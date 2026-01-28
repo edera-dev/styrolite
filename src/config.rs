@@ -70,6 +70,10 @@ pub struct ExecutableSpec {
     /// An optional set of process-specific resource limits.
     /// If this set is not provided, setrlimit(2) will not be called.
     pub process_limits: Option<ProcessResourceLimits>,
+
+    /// If `true`, sets `PR_SET_NO_NEW_PRIVS` before
+    /// spawning the target executable.
+    pub no_new_privs: bool,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
