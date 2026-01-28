@@ -6,18 +6,6 @@ on:
     types:
     - published
 
-  # Run on pull requests to publish binaries to pull request workflow runs
-  pull_request:
-    branches:
-      - main
-    paths:
-      - bin/**
-      - examples/**
-      - src/**
-      - Cargo.*
-      - rust-toolchain.toml
-      - .github/workflows/publish.yaml
-
 permissions:
   contents: read # Default token to read
 
