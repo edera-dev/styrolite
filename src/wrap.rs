@@ -1,5 +1,3 @@
-use libc;
-
 use std::env;
 use std::ffi::CString;
 use std::fs;
@@ -22,7 +20,8 @@ use crate::signal;
 use crate::unshare::{setns, unshare};
 use anyhow::{Result, anyhow, bail};
 use libc::{
-    PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, PR_CAPBSET_DROP, c_int, prctl,
+    self, PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, PR_CAPBSET_DROP,
+    PR_SET_NO_NEW_PRIVS, c_int, prctl,
 };
 
 use log::{debug, error, warn};
@@ -569,6 +568,10 @@ impl ExecutableSpec {
             env::set_current_dir(wd.clone())?;
         }
 
+        if self.no_new_privs {
+            self.set_no_new_privs()?;
+        }
+
         unsafe {
             if libc::execvpe(
                 program_cstring.as_ptr(),
@@ -608,6 +611,21 @@ impl ExecutableSpec {
         set_process_limit(libc::RLIMIT_RTTIME, prlimits.real_time_limit)?;
         set_process_limit(libc::RLIMIT_SIGPENDING, prlimits.pending_signal_limit)?;
         set_process_limit(libc::RLIMIT_STACK, prlimits.main_thread_stack_size)?;
+
+        Ok(())
+    }
+
+    // Note that `PR_SET_NO_NEW_PRIVS` is *not* a foolproof privilege escalation
+    // setting - it just "locks" the privilege set. If the process is granted
+    // CAP_ADMIN or similar elsewhere, it is trivial to escalate privs in spite of this flag.
+    fn set_no_new_privs(&self) -> Result<()> {
+        let error = unsafe { prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
+        if error != 0 {
+            bail!(
+                "failed to set no_new_privs flag: {}",
+                Error::last_os_error()
+            );
+        }
 
         Ok(())
     }

@@ -79,6 +79,11 @@ impl AttachRequestBuilder {
         self
     }
 
+    pub fn set_no_new_privs(mut self, no_new_privs: bool) -> AttachRequestBuilder {
+        self.config.exec.no_new_privs = no_new_privs;
+        self
+    }
+
     pub fn push_environment(mut self, key: &str, value: &str) -> AttachRequestBuilder {
         if self.config.exec.environment.is_none() {
             self.config.exec.environment = BTreeMap::new().into();
@@ -179,6 +184,11 @@ impl CreateRequestBuilder {
 
     pub fn set_gid(mut self, gid: gid_t) -> CreateRequestBuilder {
         self.config.exec.gid = gid.into();
+        self
+    }
+
+    pub fn set_no_new_privs(mut self, no_new_privs: bool) -> CreateRequestBuilder {
+        self.config.exec.no_new_privs = no_new_privs;
         self
     }
 
