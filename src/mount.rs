@@ -27,7 +27,7 @@ impl Mountable for MountSpec {
             source.as_ptr()
         };
         let fstype = unpack(self.fstype.clone());
-        let fstype_p = if self.fstype.is_none() {
+        let fstype_p = if self.fstype.is_none() || self.bind {
             ptr::null()
         } else {
             fstype.as_ptr()
@@ -40,6 +40,7 @@ impl Mountable for MountSpec {
         }
 
         let mut flags: c_ulong = libc::MS_SILENT;
+        let mut need_remount = false;
 
         if self.bind {
             flags |= libc::MS_BIND;
@@ -53,19 +54,33 @@ impl Mountable for MountSpec {
             flags |= libc::MS_REC;
         }
 
-        if self.safe {
-            flags |= libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC;
-        }
-
-        if self.read_only {
-            flags |= libc::MS_RDONLY;
-        }
-
         unsafe {
             let result = libc::mount(source_p, target_p, fstype_p, flags, ptr::null());
 
             if result < 0 {
                 bail!("unable to mount");
+            }
+        }
+
+        if self.safe {
+            flags |= libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC;
+            need_remount = true;
+        }
+
+        if self.read_only {
+            flags |= libc::MS_RDONLY;
+            need_remount = true;
+        }
+
+        if need_remount {
+            flags |= libc::MS_REMOUNT;
+
+            unsafe {
+                let result = libc::mount(ptr::null(), target_p, ptr::null(), flags, ptr::null());
+
+                if result < 0 {
+                    bail!("unable to mount");
+                }
             }
         }
 
