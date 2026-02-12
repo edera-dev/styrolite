@@ -51,6 +51,10 @@ struct Cli {
     args: Vec<String>,
 }
 
+fn current_ids() -> (libc::uid_t, libc::gid_t) {
+    unsafe { (libc::geteuid(), libc::getegid()) }
+}
+
 fn build_mounts(cli: &Cli) -> Result<Vec<CliMountSpec>> {
     let mut mounts = Vec::new();
 
@@ -143,12 +147,16 @@ fn to_styrolite_mount(m: &CliMountSpec) -> StyroMountSpec {
 }
 
 fn main() -> Result<()> {
+    let (uid, gid) = current_ids();
+
     let cli = Cli::parse();
     let mut builder = CreateRequestBuilder::new()
         .set_rootfs("/")
         .set_rootfs_readonly(true)
         .set_skip_two_stage_userns(true)
         .set_executable(&cli.program)
+        .set_uid(uid)
+        .set_gid(gid)
         .push_namespace(Namespace::Uts)
         .push_namespace(Namespace::Time)
         .push_namespace(Namespace::Pid)
