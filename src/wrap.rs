@@ -431,11 +431,19 @@ impl Wrappable for CreateRequest {
             warn!("unable to prepare cgroup: {e}");
         }
 
-        let first_level_ns = target_ns
-            .iter()
-            .filter(|ns| **ns != Namespace::User)
-            .cloned()
-            .collect::<Vec<_>>();
+        let skip_two_stage_userns = self
+            .skip_two_stage_userns
+            .unwrap_or(false);
+
+        let first_level_ns = if !skip_two_stage_userns {
+            target_ns
+                .iter()
+                .filter(|ns| **ns != Namespace::User)
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            target_ns.clone()
+        };
 
         debug!("unsharing namespaces");
         unshare(&first_level_ns)?;
@@ -512,7 +520,7 @@ impl Wrappable for CreateRequest {
         debug!("mount tree finalized, doing final prep");
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
-        if target_ns.contains(&Namespace::User) {
+        if !skip_two_stage_userns && target_ns.contains(&Namespace::User) {
             debug!("unsharing user namespace");
             unshare(&vec![Namespace::User])?;
         }
