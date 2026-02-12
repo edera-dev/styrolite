@@ -162,6 +162,11 @@ impl CreateRequestBuilder {
         self
     }
 
+    pub fn set_skip_two_stage_userns(mut self, skip_two_stage_userns: bool) -> CreateRequestBuilder {
+        self.config.skip_two_stage_userns = Some(skip_two_stage_userns);
+        self
+    }
+
     pub fn set_executable(mut self, executable: &str) -> CreateRequestBuilder {
         self.config.exec.executable = executable.to_string().into();
         self

@@ -129,8 +129,12 @@ pub struct CreateRequest {
 
     /// Whether setgroups(2) should be denied in this container.
     pub setgroups_deny: Option<bool>,
+
     /// Capabilities for this container.
     pub capabilities: Option<Capabilities>,
+
+    /// Whether the two-stage userns setup should be skipped.
+    pub skip_two_stage_userns: Option<bool>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
