@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
+use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use anyhow::{Result, anyhow};
@@ -399,5 +400,27 @@ impl Runner {
         }
 
         Err(anyhow!("failed to launch/monitor child process"))
+    }
+
+    /// Replace the current process with the styrolite runner directly.
+    #[cfg(unix)]
+    pub fn exec<T: Configurable>(&self, config: T) -> Result<()> {
+        let mut config_file = TempFile::new("styrolite-cfg-", ".json")?;
+        self.write_config(config, &mut config_file)?;
+
+        // Build the command like before
+        let mut command = self.create_command(&config_file)?;
+
+        // NOTE: If exec succeeds, this process image is replaced; no destructors run.
+        // That means config_file won't be dropped, so a drop-based cleanup won't happen.
+        // If TempFile is delete-on-drop, the file may be left behind.
+        let err = command.exec(); // only returns on failure
+        Err(anyhow!(err))
+    }
+
+    #[cfg(not(unix))]
+    pub fn exec<T: Configurable>(&self, config: T) -> Result<()> {
+        let _ = config;
+        Err(anyhow!("Runner::exec is only supported on unix"))
     }
 }
