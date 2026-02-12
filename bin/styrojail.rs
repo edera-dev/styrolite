@@ -12,7 +12,7 @@ struct ResourceLimit {
 }
 
 #[derive(Clone, Debug)]
-struct MountSpec {
+struct CliMountSpec {
     hostpath: String,
     jailpath: String,
     read_write: bool,
@@ -29,7 +29,7 @@ struct Cli {
     no_default_mounts: bool,
 
     #[arg(long, value_name = "HOSTPATH:JAILPATH", value_parser = parse_mount)]
-    mount: Vec<MountSpec>,
+    mount: Vec<CliMountSpec>,
 
     #[arg(long, value_name = "key:value", value_parser = parse_resource_limit)]
     limit: Vec<ResourceLimit>,
@@ -41,7 +41,40 @@ struct Cli {
     args: Vec<String>,
 }
 
-fn parse_mount(s: &str) -> Result<MountSpec> {
+fn build_mounts(cli: &Cli) -> Result<Vec<CliMountSpec>> {
+    let mut mounts = Vec::new();
+
+    if !cli.no_default_mounts {
+        // 1) /:/  (read-only)
+        mounts.push(CliMountSpec {
+            hostpath: "/".into(),
+            jailpath: "/".into(),
+            read_write: false,
+        });
+
+        // 2) $CWD:$CWD:rw
+        let cwd: PathBuf = env::current_dir()
+            .map_err(|e| anyhow!("failed to get CWD: {e}"))?;
+
+        let cwd_str = cwd
+            .to_str()
+            .ok_or(anyhow!("CWD is not valid UTF-8"))?
+            .to_string();
+
+        mounts.push(CliMountSpec {
+            hostpath: cwd_str.clone(),
+            jailpath: cwd_str,
+            read_write: true,
+        });
+    }
+
+    // Then append user-specified mounts
+    mounts.extend(cli.mount.clone());
+
+    Ok(mounts)
+}
+
+fn parse_mount(s: &str) -> Result<CliMountSpec> {
     let mut parts = s.split(':');
 
     let hostpath = parts
@@ -70,7 +103,7 @@ fn parse_mount(s: &str) -> Result<MountSpec> {
         }
     };
 
-    Ok(MountSpec {
+    Ok(CliMountSpec {
         hostpath: hostpath.to_string(),
         jailpath: jailpath.to_string(),
         read_write,
@@ -100,8 +133,10 @@ fn main() -> Result<()> {
     argv.push(cli.program.clone());
     argv.extend(cli.args.iter().cloned());
 
+    let mounts = build_mounts(&cli)?;
+
     eprintln!("no_default_mount = {}", cli.no_default_mounts);
-    eprintln!("mounts = {:?}", cli.mount);
+    eprintln!("mounts = {:?}", mounts);
     eprintln!("limits = {:?}", cli.limit);
     eprintln!("exec argv = {:?}", argv);
     
