@@ -391,7 +391,9 @@ impl CreateRequest {
             }
         }
 
-        newroot.pivot().expect("failed to pivot to new rootfs");
+        if newroot.source.clone().unwrap() != "/" {
+            newroot.pivot().expect("failed to pivot to new rootfs");
+        }
 
         Ok(())
     }
