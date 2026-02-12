@@ -3,7 +3,9 @@ use std::{env, fs, path::PathBuf, str::FromStr};
 use anyhow::{anyhow, Result};
 use clap::{Parser};
 use env_logger::Env;
-use styrolite::runner::CreateRequestBuilder;
+use styrolite::config::{MountSpec as StyroMountSpec};
+use styrolite::runner::{CreateRequestBuilder, Runner};
+use styrolite::namespace::Namespace;
 
 #[derive(Clone, Debug)]
 struct ResourceLimit {
@@ -25,18 +27,27 @@ struct CliMountSpec {
     version,
 )]
 struct Cli {
+    /// Path to styrolite binary (default: resolved via PATH)
+    #[arg(long, default_value = "styrolite")]
+    styrolite_bin: String,
+
+    /// Do not synthesize default mounts (e.g. $CWD:$CWD:rw)
     #[arg(long)]
     no_default_mounts: bool,
 
+    /// Additional bind-mounts for the jail
     #[arg(long, value_name = "HOSTPATH:JAILPATH", value_parser = parse_mount)]
     mount: Vec<CliMountSpec>,
 
+    /// Additional cgroup2 resource limits for the jail
     #[arg(long, value_name = "key:value", value_parser = parse_resource_limit)]
     limit: Vec<ResourceLimit>,
 
+    /// The program being jailed
     #[arg(value_name = "PROGRAM")]
     program: String,
 
+    /// Arguments to the program being jailed
     #[arg(value_name = "ARGS")]
     args: Vec<String>,
 }
@@ -45,14 +56,6 @@ fn build_mounts(cli: &Cli) -> Result<Vec<CliMountSpec>> {
     let mut mounts = Vec::new();
 
     if !cli.no_default_mounts {
-        // 1) /:/  (read-only)
-        mounts.push(CliMountSpec {
-            hostpath: "/".into(),
-            jailpath: "/".into(),
-            read_write: false,
-        });
-
-        // 2) $CWD:$CWD:rw
         let cwd: PathBuf = env::current_dir()
             .map_err(|e| anyhow!("failed to get CWD: {e}"))?;
 
@@ -125,20 +128,50 @@ fn parse_resource_limit(s: &str) -> Result<ResourceLimit> {
     })
 }
 
+fn to_styrolite_mount(m: &CliMountSpec) -> StyroMountSpec {
+    StyroMountSpec {
+        source: Some(m.hostpath.clone()),
+        target: m.jailpath.clone(),
+        fstype: None,
+        bind: true,
+        recurse: false,
+        unshare: false,
+        safe: true,
+        create_mountpoint: true,
+        read_only: !m.read_write,
+        ..Default::default()
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let createreq = CreateRequestBuilder::new();
+    let mut builder = CreateRequestBuilder::new()
+        .set_rootfs("/")
+        .set_rootfs_readonly(true)
+        .set_executable(&cli.program)
+        .push_namespace(Namespace::Uts)
+        .push_namespace(Namespace::Time)
+        .push_namespace(Namespace::Pid)
+        .push_namespace(Namespace::User)
+        .push_namespace(Namespace::Ipc)
+        .push_namespace(Namespace::Mount);
 
-    let mut argv = Vec::with_capacity(1 + cli.args.len());
-    argv.push(cli.program.clone());
-    argv.extend(cli.args.iter().cloned());
+    let args_ref: Vec<&str> = cli.args.iter().map(|s| s.as_str()).collect();
+    builder = builder.set_arguments(args_ref);
 
     let mounts = build_mounts(&cli)?;
 
-    eprintln!("no_default_mount = {}", cli.no_default_mounts);
-    eprintln!("mounts = {:?}", mounts);
-    eprintln!("limits = {:?}", cli.limit);
-    eprintln!("exec argv = {:?}", argv);
-    
-    Ok(())
+    for m in &mounts {
+        builder = builder.push_mount(to_styrolite_mount(m));
+    }
+
+    for lim in &cli.limit {
+        builder = builder.push_resource_limit(&lim.key, &lim.value);
+    }
+
+    let req = builder.to_request();
+    let runner = Runner::new(&cli.styrolite_bin);
+    runner.exec(req)?;
+
+    Err(anyhow!("styrolite exec failed"))
 }
