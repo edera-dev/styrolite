@@ -2,7 +2,7 @@ use std::{env, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use clap::{Parser};
-use styrolite::config::{MountSpec as StyroMountSpec};
+use styrolite::config::{IdMapping, MountSpec as StyroMountSpec};
 use styrolite::runner::{CreateRequestBuilder, Runner};
 use styrolite::namespace::Namespace;
 
@@ -139,7 +139,7 @@ fn to_styrolite_mount(m: &CliMountSpec) -> StyroMountSpec {
         bind: true,
         recurse: false,
         unshare: false,
-        safe: true,
+        safe: false,
         create_mountpoint: true,
         read_only: !m.read_write,
         ..Default::default()
@@ -157,6 +157,18 @@ fn main() -> Result<()> {
         .set_executable(&cli.program)
         .set_uid(uid)
         .set_gid(gid)
+        .set_setgroups_deny(true)
+        .set_workload_id("styrojail")
+        .push_uid_mapping(IdMapping {
+            base_nsid: uid,
+            base_hostid: uid,
+            remap_count: 1,
+        })
+        .push_gid_mapping(IdMapping {
+            base_nsid: gid,
+            base_hostid: gid,
+            remap_count: 1,
+        })
         .push_namespace(Namespace::Uts)
         .push_namespace(Namespace::Time)
         .push_namespace(Namespace::Pid)
