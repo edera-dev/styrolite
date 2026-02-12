@@ -57,6 +57,10 @@ impl Mountable for MountSpec {
             flags |= libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC;
         }
 
+        if self.read_only {
+            flags |= libc::MS_RDONLY;
+        }
+
         unsafe {
             let result = libc::mount(source_p, target_p, fstype_p, flags, ptr::null());
 

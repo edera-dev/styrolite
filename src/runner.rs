@@ -156,6 +156,11 @@ impl CreateRequestBuilder {
         self
     }
 
+    pub fn set_rootfs_readonly(mut self, rootfs_readonly: bool) -> CreateRequestBuilder {
+        self.config.rootfs_readonly = Some(rootfs_readonly);
+        self
+    }
+
     pub fn set_executable(mut self, executable: &str) -> CreateRequestBuilder {
         self.config.exec.executable = executable.to_string().into();
         self

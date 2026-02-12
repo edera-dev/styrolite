@@ -307,6 +307,10 @@ impl CreateRequest {
             .clone()
             .expect("expected rootfs to be configured");
 
+        let rootfs_readonly = self
+            .rootfs_readonly
+            .unwrap_or(false);
+
         // Unshare rootfs mount so we can later pivot to a new rootfs.
         // The unshared root mount will be cleaned up once the new rootfs is
         // in place.
@@ -319,6 +323,7 @@ impl CreateRequest {
             unshare: true,
             safe: false,
             create_mountpoint: false,
+            read_only: false,
         };
 
         oldroot
@@ -335,6 +340,7 @@ impl CreateRequest {
             unshare: false,
             safe: false,
             create_mountpoint: false,
+            read_only: rootfs_readonly,
         };
 
         newroot.mount().expect("failed to bind new rootfs");
@@ -349,6 +355,7 @@ impl CreateRequest {
             unshare: false,
             safe: true,
             create_mountpoint: false,
+            read_only: false,
         };
 
         procfs.mount().expect("failed to mount /proc");
@@ -365,6 +372,7 @@ impl CreateRequest {
                     unshare: mount.unshare,
                     safe: mount.safe,
                     create_mountpoint: mount.create_mountpoint,
+                    read_only: mount.read_only,
                 };
 
                 parented_mount
