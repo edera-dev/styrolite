@@ -148,6 +148,7 @@ fn main() -> Result<()> {
     let mut builder = CreateRequestBuilder::new()
         .set_rootfs("/")
         .set_rootfs_readonly(true)
+        .set_skip_two_stage_userns(true)
         .set_executable(&cli.program)
         .push_namespace(Namespace::Uts)
         .push_namespace(Namespace::Time)
