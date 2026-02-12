@@ -1,8 +1,7 @@
-use std::{env, fs, path::PathBuf, str::FromStr};
+use std::{env, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use clap::{Parser};
-use env_logger::Env;
 use styrolite::config::{MountSpec as StyroMountSpec};
 use styrolite::runner::{CreateRequestBuilder, Runner};
 use styrolite::namespace::Namespace;
