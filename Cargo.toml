@@ -29,6 +29,10 @@ name = "styrolite"
 name = "styrolite"
 path = "bin/styrolite.rs"
 
+[[bin]]
+name = "styrojail"
+path = "bin/styrojail.rs"
+
 [[example]]
 name = "styrolite-rundir"
 path = "examples/rundir.rs"
