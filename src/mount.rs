@@ -6,7 +6,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::raw::{c_int, c_uint};
 use std::ptr;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use libc;
 
 use crate::config::{MountSpec, Mountable};
@@ -122,12 +122,14 @@ impl Mountable for MountSpec {
         } else {
             source.as_ptr()
         };
+
         let fstype = unpack(self.fstype.clone());
         let fstype_p = if self.fstype.is_none() || self.bind {
             ptr::null()
         } else {
             fstype.as_ptr()
         };
+
         let target = CString::new(self.target.clone())?;
         let target_p = target.as_ptr();
 
@@ -136,7 +138,6 @@ impl Mountable for MountSpec {
         }
 
         let mut flags: c_ulong = libc::MS_SILENT;
-        let mut need_remount = false;
 
         if self.bind {
             flags |= libc::MS_BIND;
@@ -151,33 +152,38 @@ impl Mountable for MountSpec {
         }
 
         unsafe {
-            let result = libc::mount(source_p, target_p, fstype_p, flags, ptr::null());
-
-            if result < 0 {
+            let rc = libc::mount(source_p, target_p, fstype_p, flags, ptr::null());
+            if rc < 0 {
                 bail!("unable to mount");
             }
         }
 
+        let mut set: c_ulong = 0;
+
         if self.safe {
-            flags |= libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC;
-            need_remount = true;
+            set |= libc::MOUNT_ATTR_NOSUID as c_ulong;
+            set |= libc::MOUNT_ATTR_NODEV as c_ulong;
+            set |= libc::MOUNT_ATTR_NOEXEC as c_ulong;
         }
 
         if self.read_only {
-            flags |= libc::MS_RDONLY;
-            need_remount = true;
+            set |= libc::MOUNT_ATTR_RDONLY as c_ulong;
         }
 
-        if need_remount {
-            flags |= libc::MS_REMOUNT;
+        if set != 0 {
+            let mut attr: libc::mount_attr = unsafe { std::mem::zeroed() };
+            attr.attr_set = set as u64;
+            attr.attr_clr = 0;
+            attr.propagation = 0;
+            attr.userns_fd = 0;
 
-            unsafe {
-                let result = libc::mount(ptr::null(), target_p, ptr::null(), flags, ptr::null());
-
-                if result < 0 {
-                    bail!("unable to mount");
-                }
+            let mut msaflags: c_uint = 0;
+            if self.recurse {
+                msaflags |= libc::AT_RECURSIVE as c_uint;
             }
+
+            mount_setattr(libc::AT_FDCWD, &self.target, msaflags, &attr)
+                .map_err(|e| anyhow!(e))?;
         }
 
         Ok(())
