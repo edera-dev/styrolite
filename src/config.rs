@@ -259,6 +259,9 @@ pub trait Mountable {
     /// Pivot, making this mount point the new rootfs.
     /// The old rootfs is unmounted as a side effect.
     fn pivot(&self) -> Result<()>;
+
+    /// Makes a mountpoint read-only after the fact.
+    fn seal(&self) -> Result<()>;
 }
 
 pub type ResourceLimits = BTreeMap<String, String>;

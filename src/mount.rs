@@ -115,6 +115,20 @@ pub fn mount_setattr_fd(
 }
 
 impl Mountable for MountSpec {
+    fn seal(&self) -> Result<()> {
+        let tree = open_tree(
+            libc::AT_FDCWD,
+            self.source.as_deref().ok_or_else(|| anyhow!("source missing"))?,
+            libc::OPEN_TREE_CLOEXEC as u32
+        )?;
+
+        let mut attr: libc::mount_attr = unsafe { std::mem::zeroed() };
+        attr.attr_set |= libc::MOUNT_ATTR_RDONLY as u64;
+        mount_setattr_fd(&tree, false, &attr)?;
+
+        Ok(())
+    }
+
     fn mount(&self) -> Result<()> {
         let source = unpack(self.source.clone());
         let source_p = if self.source.is_none() {
@@ -134,7 +148,7 @@ impl Mountable for MountSpec {
         let target_p = target.as_ptr();
 
         if self.create_mountpoint {
-            fs::create_dir_all(self.target.clone())?;
+            fs::create_dir_all(&self.target)?;
         }
 
         let mut flags: c_ulong = libc::MS_SILENT;
