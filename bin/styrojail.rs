@@ -1,10 +1,10 @@
 use std::{env, path::PathBuf};
 
-use anyhow::{anyhow, Result};
-use clap::{Parser};
+use anyhow::{Result, anyhow};
+use clap::Parser;
 use styrolite::config::{IdMapping, MountSpec as StyroMountSpec};
-use styrolite::runner::{CreateRequestBuilder, Runner};
 use styrolite::namespace::Namespace;
+use styrolite::runner::{CreateRequestBuilder, Runner};
 
 #[derive(Clone, Debug)]
 struct ResourceLimit {
@@ -23,7 +23,7 @@ struct CliMountSpec {
 #[command(
     name = "styrojail",
     about = "convenient jail-style styrolite frontend",
-    version,
+    version
 )]
 struct Cli {
     /// Path to styrolite binary (default: resolved via PATH)
@@ -59,8 +59,7 @@ fn build_mounts(cli: &Cli) -> Result<Vec<CliMountSpec>> {
     let mut mounts = Vec::new();
 
     if !cli.no_default_mounts {
-        let cwd: PathBuf = env::current_dir()
-            .map_err(|e| anyhow!("failed to get CWD: {e}"))?;
+        let cwd: PathBuf = env::current_dir().map_err(|e| anyhow!("failed to get CWD: {e}"))?;
 
         let cwd_str = cwd
             .to_str()

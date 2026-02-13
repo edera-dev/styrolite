@@ -307,9 +307,7 @@ impl CreateRequest {
             .clone()
             .expect("expected rootfs to be configured");
 
-        let rootfs_readonly = self
-            .rootfs_readonly
-            .unwrap_or(false);
+        let rootfs_readonly = self.rootfs_readonly.unwrap_or(false);
 
         // Unshare rootfs mount so we can later pivot to a new rootfs.
         // The unshared root mount will be cleaned up once the new rootfs is
@@ -431,9 +429,7 @@ impl Wrappable for CreateRequest {
             warn!("unable to prepare cgroup: {e}");
         }
 
-        let skip_two_stage_userns = self
-            .skip_two_stage_userns
-            .unwrap_or(false);
+        let skip_two_stage_userns = self.skip_two_stage_userns.unwrap_or(false);
 
         let first_level_ns = if !skip_two_stage_userns {
             target_ns
