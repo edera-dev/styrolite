@@ -332,7 +332,7 @@ impl CreateRequest {
         // we have to do some special things to cope with that.
         let stage_base = format!("/tmp/styrolite-stage-{}", self.identity()?);
         let stage_root = format!("/tmp/styrolite-stage-{}/root", self.identity()?);
-        let stage_old  = format!("/tmp/styrolite-stage-{}/old", self.identity()?);
+        let stage_old = format!("/tmp/styrolite-stage-{}/old", self.identity()?);
 
         if rootfs == "/" {
             // Mount a tmpfs staging area so we can pivot into a non-"/" mountpoint.
@@ -343,8 +343,8 @@ impl CreateRequest {
                 bind: false,
                 recurse: false,
                 unshare: false,
-                safe: true,               // nodev/nosuid/noexec on the staging mount is fine
-                create_mountpoint: true,  // ensure stage_base exists
+                safe: true,
+                create_mountpoint: true,
                 read_only: false,
             };
             stage_tmpfs.mount().expect("failed to mount staging tmpfs");
@@ -363,7 +363,9 @@ impl CreateRequest {
                 create_mountpoint: false,
                 read_only: false,
             };
-            stage_bind.mount().expect("failed to bind / into staging root");
+            stage_bind
+                .mount()
+                .expect("failed to bind / into staging root");
 
             rootfs = stage_root.to_string();
         }

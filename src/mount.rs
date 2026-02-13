@@ -101,11 +101,7 @@ pub fn move_mount_fd_to(fd: &OwnedFd, target: &str) -> io::Result<()> {
     )
 }
 
-pub fn mount_setattr_fd(
-    fd: &OwnedFd,
-    recursive: bool,
-    attr: &libc::mount_attr,
-) -> io::Result<()> {
+pub fn mount_setattr_fd(fd: &OwnedFd, recursive: bool, attr: &libc::mount_attr) -> io::Result<()> {
     let mut flags = libc::AT_EMPTY_PATH as c_uint;
     if recursive {
         flags |= libc::AT_RECURSIVE as c_uint;
@@ -118,8 +114,10 @@ impl Mountable for MountSpec {
     fn seal(&self) -> Result<()> {
         let tree = open_tree(
             libc::AT_FDCWD,
-            self.source.as_deref().ok_or_else(|| anyhow!("source missing"))?,
-            libc::OPEN_TREE_CLOEXEC as u32
+            self.source
+                .as_deref()
+                .ok_or_else(|| anyhow!("source missing"))?,
+            libc::OPEN_TREE_CLOEXEC as u32,
         )?;
 
         let mut attr: libc::mount_attr = unsafe { std::mem::zeroed() };
@@ -196,8 +194,7 @@ impl Mountable for MountSpec {
                 msaflags |= libc::AT_RECURSIVE as c_uint;
             }
 
-            mount_setattr(libc::AT_FDCWD, &self.target, msaflags, &attr)
-                .map_err(|e| anyhow!(e))?;
+            mount_setattr(libc::AT_FDCWD, &self.target, msaflags, &attr).map_err(|e| anyhow!(e))?;
         }
 
         Ok(())
