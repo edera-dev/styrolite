@@ -75,7 +75,6 @@ jobs:
         run: |
           tag_name="${TAG_NAME}"
           [ -z $tag_name ] && tag_name="${DEFAULT_BRANCH}"
-          export STYROLITE_FORM='styrolite'
           export STYROLITE_TAG_NAME="${tag_name}"
           export STYROLITE_PLATFORM
           export STYROLITE_RELEASE_DIR='target/*/release'
