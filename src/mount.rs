@@ -1,12 +1,85 @@
 use std::env;
 use std::ffi::{CString, c_ulong};
 use std::fs;
+use std::io;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::raw::{c_int, c_uint};
 use std::ptr;
 
 use anyhow::{Result, bail};
 use libc;
 
 use crate::config::{MountSpec, Mountable};
+
+const MOVE_MOUNT_F_EMPTY_PATH: c_uint = 0x4;
+
+/// open_tree(2)
+pub fn open_tree(dfd: c_int, path: &str, flags: c_uint) -> io::Result<OwnedFd> {
+    let c_path = CString::new(path)?;
+    let ret = unsafe { libc::syscall(libc::SYS_open_tree, dfd, c_path.as_ptr(), flags) };
+
+    if ret < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(unsafe { OwnedFd::from_raw_fd(ret as c_int) })
+}
+
+/// move_mount(2)
+pub fn move_mount(
+    from_dfd: c_int,
+    from_path: &str,
+    to_dfd: c_int,
+    to_path: &str,
+    flags: c_uint,
+) -> io::Result<()> {
+    let c_from = CString::new(from_path)?;
+    let c_to = CString::new(to_path)?;
+
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_move_mount,
+            from_dfd,
+            c_from.as_ptr(),
+            to_dfd,
+            c_to.as_ptr(),
+            flags,
+        )
+    };
+
+    if ret < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(())
+}
+
+/// mount_setattr(2)
+pub fn mount_setattr(
+    dfd: c_int,
+    path: &str,
+    flags: c_uint,
+    attr: &libc::mount_attr,
+) -> io::Result<()> {
+    let c_path = CString::new(path)?;
+
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_mount_setattr,
+            dfd,
+            c_path.as_ptr(),
+            flags,
+            attr as *const libc::mount_attr,
+            std::mem::size_of::<libc::mount_attr>(),
+        )
+    };
+
+    if ret < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(())
+}
 
 fn unpack(data: Option<String>) -> CString {
     if data.is_some()
@@ -16,6 +89,29 @@ fn unpack(data: Option<String>) -> CString {
     }
 
     CString::new("").expect("")
+}
+
+pub fn move_mount_fd_to(fd: &OwnedFd, target: &str) -> io::Result<()> {
+    move_mount(
+        fd.as_raw_fd(),
+        "",
+        libc::AT_FDCWD,
+        target,
+        MOVE_MOUNT_F_EMPTY_PATH as c_uint,
+    )
+}
+
+pub fn mount_setattr_fd(
+    fd: &OwnedFd,
+    recursive: bool,
+    attr: &libc::mount_attr,
+) -> io::Result<()> {
+    let mut flags = libc::AT_EMPTY_PATH as c_uint;
+    if recursive {
+        flags |= libc::AT_RECURSIVE as c_uint;
+    }
+
+    mount_setattr(fd.as_raw_fd(), "", flags, attr)
 }
 
 impl Mountable for MountSpec {
