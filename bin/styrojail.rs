@@ -34,6 +34,14 @@ struct Cli {
     #[arg(long)]
     no_default_mounts: bool,
 
+    /// Path to rootfs (default: /)
+    #[arg(long, default_value = "/")]
+    rootfs: String,
+
+    /// Whether the rootfs should be readonly (default: true)
+    #[arg(long)]
+    no_rootfs_readonly: bool,
+
     /// Additional bind-mounts for the jail
     #[arg(long, value_name = "HOSTPATH:JAILPATH", value_parser = parse_mount)]
     mount: Vec<CliMountSpec>,
@@ -148,16 +156,15 @@ fn to_styrolite_mount(m: &CliMountSpec) -> StyroMountSpec {
 fn main() -> Result<()> {
     let (uid, gid) = current_ids();
 
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
     let mut builder = CreateRequestBuilder::new()
-        .set_rootfs("/")
-        .set_rootfs_readonly(true)
+        .set_rootfs(&cli.rootfs)
+        .set_rootfs_readonly(!cli.no_rootfs_readonly)
         .set_skip_two_stage_userns(true)
         .set_executable(&cli.program)
         .set_uid(uid)
         .set_gid(gid)
         .set_setgroups_deny(true)
-        .set_working_directory(std::env::current_dir()?.as_os_str().to_str().unwrap_or("/"))
         .set_workload_id(format!("styrojail-{}", std::process::id()).as_str())
         .push_uid_mapping(IdMapping {
             base_nsid: uid,
@@ -175,6 +182,13 @@ fn main() -> Result<()> {
         .push_namespace(Namespace::User)
         .push_namespace(Namespace::Ipc)
         .push_namespace(Namespace::Mount);
+
+    if cli.rootfs == "/" {
+        builder = builder
+            .set_working_directory(std::env::current_dir()?.as_os_str().to_str().unwrap_or("/"))
+    } else {
+        cli.no_default_mounts = true;
+    }
 
     let args_ref: Vec<&str> = cli.args.iter().map(|s| s.as_str()).collect();
     builder = builder.set_arguments(args_ref);
