@@ -302,7 +302,7 @@ impl CreateRequest {
     fn pivot_fs(&self) -> Result<()> {
         debug!("early mount!");
 
-        let rootfs = self
+        let mut rootfs = self
             .rootfs
             .clone()
             .expect("expected rootfs to be configured");
@@ -328,6 +328,46 @@ impl CreateRequest {
             .mount()
             .expect("failed to unshare / in new mount namespace");
 
+        // If we want to clone the VFS root, e.g. for styrojail,
+        // we have to do some special things to cope with that.
+        let stage_base = format!("/tmp/styrolite-stage-{}", self.identity()?);
+        let stage_root = format!("/tmp/styrolite-stage-{}/root", self.identity()?);
+        let stage_old  = format!("/tmp/styrolite-stage-{}/old", self.identity()?);
+
+        if rootfs == "/" {
+            // Mount a tmpfs staging area so we can pivot into a non-"/" mountpoint.
+            let stage_tmpfs = MountSpec {
+                source: Some("tmpfs".to_string()),
+                target: stage_base,
+                fstype: Some("tmpfs".to_string()),
+                bind: false,
+                recurse: false,
+                unshare: false,
+                safe: true,               // nodev/nosuid/noexec on the staging mount is fine
+                create_mountpoint: true,  // ensure stage_base exists
+                read_only: false,
+            };
+            stage_tmpfs.mount().expect("failed to mount staging tmpfs");
+
+            std::fs::create_dir_all(&stage_root).expect("failed to create staging root dir");
+            std::fs::create_dir_all(&stage_old).expect("failed to create staging old dir");
+
+            let stage_bind = MountSpec {
+                source: Some("/".to_string()),
+                target: stage_root.clone(),
+                fstype: Some("none".to_string()),
+                bind: true,
+                recurse: true,
+                unshare: false,
+                safe: false,
+                create_mountpoint: false,
+                read_only: false,
+            };
+            stage_bind.mount().expect("failed to bind / into staging root");
+
+            rootfs = stage_root.to_string();
+        }
+
         // Now mount the new rootfs.
         let newroot = MountSpec {
             source: Some(rootfs.clone()),
@@ -338,10 +378,14 @@ impl CreateRequest {
             unshare: false,
             safe: false,
             create_mountpoint: false,
-            read_only: rootfs_readonly,
+            read_only: false,
         };
 
         newroot.mount().expect("failed to bind new rootfs");
+
+        if rootfs_readonly {
+            newroot.seal().expect("failed to make new rootfs readonly");
+        }
 
         // Mount /proc.
         let procfs = MountSpec {
@@ -389,9 +433,7 @@ impl CreateRequest {
             }
         }
 
-        if newroot.source.clone().unwrap() != "/" {
-            newroot.pivot().expect("failed to pivot to new rootfs");
-        }
+        newroot.pivot().expect("failed to pivot to new rootfs");
 
         Ok(())
     }
