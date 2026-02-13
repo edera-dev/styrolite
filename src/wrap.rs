@@ -522,12 +522,8 @@ impl Wrappable for CreateRequest {
             pef.read_exact(&mut buf)?;
 
             if target_ns.contains(&Namespace::User) {
-                // We are preparing the userns for PID 1 because we are in the same mount namespace
-                // as the child, and thus the first process created is always PID 1.  We no longer
-                // have access to the host /proc so we just hardcode PID 1 and hope for the best.
-                // So far, this seems to work fairly well.
                 debug!("child has dropped into its own userns, configuring from supervisor");
-                self.prepare_userns(1)?;
+                self.prepare_userns(pid)?;
             }
 
             // The supervisor has now configured the user namespace, so let the first process run.
@@ -548,14 +544,6 @@ impl Wrappable for CreateRequest {
             process::exit(1);
         }
 
-        if target_ns.contains(&Namespace::Mount) {
-            self.pivot_fs()?;
-        } else {
-            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
-            warn!("this is an insecure configuration!");
-        }
-
-        debug!("mount tree finalized, doing final prep");
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
         if !skip_two_stage_userns && target_ns.contains(&Namespace::User) {
@@ -572,6 +560,16 @@ impl Wrappable for CreateRequest {
         let mut cef = unsafe { File::from_raw_fd(child_efd) };
         let mut buf = [0u8; 8];
         cef.read_exact(&mut buf)?;
+
+        // We are configured, now do the mount stuff?
+        if target_ns.contains(&Namespace::Mount) {
+            self.pivot_fs()?;
+        } else {
+            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
+            warn!("this is an insecure configuration!");
+        }
+
+        debug!("mount tree finalized, doing final prep");
 
         // We need to toggle SECBIT before we change UID/GID,
         // or else changing UID/GID may cause us to lose the capabilities
