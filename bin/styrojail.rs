@@ -157,7 +157,8 @@ fn main() -> Result<()> {
         .set_uid(uid)
         .set_gid(gid)
         .set_setgroups_deny(true)
-        .set_workload_id("styrojail")
+        .set_working_directory(std::env::current_dir()?.as_os_str().to_str().unwrap_or("/"))
+        .set_workload_id(format!("styrojail-{}", std::process::id()).as_str())
         .push_uid_mapping(IdMapping {
             base_nsid: uid,
             base_hostid: uid,
