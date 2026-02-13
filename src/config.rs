@@ -88,6 +88,9 @@ pub struct CreateRequest {
     /// It should be assumed that the rootfs might already have proc, sys, and dev mounts. (This might need to change?)
     pub rootfs: Option<String>,
 
+    /// Whether the rootfs should be mounted readonly.
+    pub rootfs_readonly: Option<bool>,
+
     /// The executable specification for the initial process created in this
     /// container.
     pub exec: ExecutableSpec,
@@ -126,8 +129,12 @@ pub struct CreateRequest {
 
     /// Whether setgroups(2) should be denied in this container.
     pub setgroups_deny: Option<bool>,
+
     /// Capabilities for this container.
     pub capabilities: Option<Capabilities>,
+
+    /// Whether the two-stage userns setup should be skipped.
+    pub skip_two_stage_userns: Option<bool>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -240,6 +247,9 @@ pub struct MountSpec {
     /// Whether the target mount point should be created as a directory if it
     /// does not exist.
     pub create_mountpoint: bool,
+
+    /// Whether the mount point should be mounted readonly.
+    pub read_only: bool,
 }
 
 pub trait Mountable {
@@ -249,6 +259,9 @@ pub trait Mountable {
     /// Pivot, making this mount point the new rootfs.
     /// The old rootfs is unmounted as a side effect.
     fn pivot(&self) -> Result<()>;
+
+    /// Makes a mountpoint read-only after the fact.
+    fn seal(&self) -> Result<()>;
 }
 
 pub type ResourceLimits = BTreeMap<String, String>;

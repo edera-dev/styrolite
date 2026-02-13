@@ -9,6 +9,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+clap = { version = "4.5.58", features = ["derive"] }
 env_logger = "0.11.8"
 libc = "0.2.180"
 log = "0.4.29"
@@ -27,6 +28,10 @@ name = "styrolite"
 [[bin]]
 name = "styrolite"
 path = "bin/styrolite.rs"
+
+[[bin]]
+name = "styrojail"
+path = "bin/styrojail.rs"
 
 [[example]]
 name = "styrolite-rundir"

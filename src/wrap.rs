@@ -302,10 +302,12 @@ impl CreateRequest {
     fn pivot_fs(&self) -> Result<()> {
         debug!("early mount!");
 
-        let rootfs = self
+        let mut rootfs = self
             .rootfs
             .clone()
             .expect("expected rootfs to be configured");
+
+        let rootfs_readonly = self.rootfs_readonly.unwrap_or(false);
 
         // Unshare rootfs mount so we can later pivot to a new rootfs.
         // The unshared root mount will be cleaned up once the new rootfs is
@@ -319,11 +321,54 @@ impl CreateRequest {
             unshare: true,
             safe: false,
             create_mountpoint: false,
+            read_only: false,
         };
 
         oldroot
             .mount()
             .expect("failed to unshare / in new mount namespace");
+
+        // If we want to clone the VFS root, e.g. for styrojail,
+        // we have to do some special things to cope with that.
+        let stage_base = format!("/tmp/styrolite-stage-{}", self.identity()?);
+        let stage_root = format!("/tmp/styrolite-stage-{}/root", self.identity()?);
+        let stage_old = format!("/tmp/styrolite-stage-{}/old", self.identity()?);
+
+        if rootfs == "/" {
+            // Mount a tmpfs staging area so we can pivot into a non-"/" mountpoint.
+            let stage_tmpfs = MountSpec {
+                source: Some("tmpfs".to_string()),
+                target: stage_base,
+                fstype: Some("tmpfs".to_string()),
+                bind: false,
+                recurse: false,
+                unshare: false,
+                safe: true,
+                create_mountpoint: true,
+                read_only: false,
+            };
+            stage_tmpfs.mount().expect("failed to mount staging tmpfs");
+
+            std::fs::create_dir_all(&stage_root).expect("failed to create staging root dir");
+            std::fs::create_dir_all(&stage_old).expect("failed to create staging old dir");
+
+            let stage_bind = MountSpec {
+                source: Some("/".to_string()),
+                target: stage_root.clone(),
+                fstype: Some("none".to_string()),
+                bind: true,
+                recurse: true,
+                unshare: false,
+                safe: false,
+                create_mountpoint: false,
+                read_only: false,
+            };
+            stage_bind
+                .mount()
+                .expect("failed to bind / into staging root");
+
+            rootfs = stage_root.to_string();
+        }
 
         // Now mount the new rootfs.
         let newroot = MountSpec {
@@ -335,9 +380,14 @@ impl CreateRequest {
             unshare: false,
             safe: false,
             create_mountpoint: false,
+            read_only: false,
         };
 
         newroot.mount().expect("failed to bind new rootfs");
+
+        if rootfs_readonly {
+            newroot.seal().expect("failed to make new rootfs readonly");
+        }
 
         // Mount /proc.
         let procfs = MountSpec {
@@ -349,6 +399,7 @@ impl CreateRequest {
             unshare: false,
             safe: true,
             create_mountpoint: false,
+            read_only: false,
         };
 
         procfs.mount().expect("failed to mount /proc");
@@ -365,6 +416,7 @@ impl CreateRequest {
                     unshare: mount.unshare,
                     safe: mount.safe,
                     create_mountpoint: mount.create_mountpoint,
+                    read_only: mount.read_only,
                 };
 
                 parented_mount
@@ -421,11 +473,17 @@ impl Wrappable for CreateRequest {
             warn!("unable to prepare cgroup: {e}");
         }
 
-        let first_level_ns = target_ns
-            .iter()
-            .filter(|ns| **ns != Namespace::User)
-            .cloned()
-            .collect::<Vec<_>>();
+        let skip_two_stage_userns = self.skip_two_stage_userns.unwrap_or(false);
+
+        let first_level_ns = if !skip_two_stage_userns {
+            target_ns
+                .iter()
+                .filter(|ns| **ns != Namespace::User)
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            target_ns.clone()
+        };
 
         debug!("unsharing namespaces");
         unshare(&first_level_ns)?;
@@ -466,12 +524,8 @@ impl Wrappable for CreateRequest {
             pef.read_exact(&mut buf)?;
 
             if target_ns.contains(&Namespace::User) {
-                // We are preparing the userns for PID 1 because we are in the same mount namespace
-                // as the child, and thus the first process created is always PID 1.  We no longer
-                // have access to the host /proc so we just hardcode PID 1 and hope for the best.
-                // So far, this seems to work fairly well.
                 debug!("child has dropped into its own userns, configuring from supervisor");
-                self.prepare_userns(1)?;
+                self.prepare_userns(pid)?;
             }
 
             // The supervisor has now configured the user namespace, so let the first process run.
@@ -492,17 +546,9 @@ impl Wrappable for CreateRequest {
             process::exit(1);
         }
 
-        if target_ns.contains(&Namespace::Mount) {
-            self.pivot_fs()?;
-        } else {
-            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
-            warn!("this is an insecure configuration!");
-        }
-
-        debug!("mount tree finalized, doing final prep");
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
-        if target_ns.contains(&Namespace::User) {
+        if !skip_two_stage_userns && target_ns.contains(&Namespace::User) {
             debug!("unsharing user namespace");
             unshare(&vec![Namespace::User])?;
         }
@@ -516,6 +562,16 @@ impl Wrappable for CreateRequest {
         let mut cef = unsafe { File::from_raw_fd(child_efd) };
         let mut buf = [0u8; 8];
         cef.read_exact(&mut buf)?;
+
+        // We are configured, now do the mount stuff?
+        if target_ns.contains(&Namespace::Mount) {
+            self.pivot_fs()?;
+        } else {
+            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
+            warn!("this is an insecure configuration!");
+        }
+
+        debug!("mount tree finalized, doing final prep");
 
         // We need to toggle SECBIT before we change UID/GID,
         // or else changing UID/GID may cause us to lose the capabilities
