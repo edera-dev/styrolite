@@ -628,6 +628,17 @@ impl ExecutableSpec {
             self.set_no_new_privs()?;
         }
 
+        // Install seccomp-bpf filter if provided.
+        // Must be after set_no_new_privs (required for unprivileged seccomp)
+        // and before execvpe (filter applies to the exec'd process).
+        if let Some(ref seccomp) = self.seccomp {
+            unsafe {
+                if let Err(e) = seccomp.install() {
+                    bail!("failed to install seccomp filter: {e}");
+                }
+            }
+        }
+
         unsafe {
             if libc::execvpe(
                 program_cstring.as_ptr(),
