@@ -337,11 +337,11 @@ fn capset(result: &CapInternalResult) -> anyhow::Result<()> {
         let err = syscall(libc::SYS_capset, &result.header, &result.data);
         if err < 0 {
             let effective =
-                ((result.data[0].effective as u64) << 32) | result.data[1].effective as u64;
+                ((result.data[1].effective as u64) << 32) | result.data[0].effective as u64;
             let permitted =
-                ((result.data[0].permitted as u64) << 32) | result.data[1].permitted as u64;
+                ((result.data[1].permitted as u64) << 32) | result.data[0].permitted as u64;
             let inheritable =
-                ((result.data[0].inheritable as u64) << 32) | result.data[1].inheritable as u64;
+                ((result.data[1].inheritable as u64) << 32) | result.data[0].inheritable as u64;
 
             Err(anyhow!(
                 "capset(2) failed: {:x} {:x} {:x} (error = {err})",
@@ -367,10 +367,11 @@ pub fn get_caps() -> anyhow::Result<CapResult> {
 
     capget(&mut iresult)?;
 
-    let effective = ((iresult.data[0].effective as u64) << 32) | iresult.data[1].effective as u64;
-    let permitted = ((iresult.data[0].permitted as u64) << 32) | iresult.data[1].permitted as u64;
+    // Linux capability v3: data[0] = caps 0-31, data[1] = caps 32+
+    let effective = ((iresult.data[1].effective as u64) << 32) | iresult.data[0].effective as u64;
+    let permitted = ((iresult.data[1].permitted as u64) << 32) | iresult.data[0].permitted as u64;
     let inheritable =
-        ((iresult.data[0].inheritable as u64) << 32) | iresult.data[1].inheritable as u64;
+        ((iresult.data[1].inheritable as u64) << 32) | iresult.data[0].inheritable as u64;
 
     let finalresult = CapResult {
         effective,
@@ -399,16 +400,17 @@ pub fn set_caps(caps: CapResult) -> anyhow::Result<()> {
             version: _LINUX_CAPABILITY_VERSION_3,
             pid,
         },
+        // Linux capability v3: data[0] = caps 0-31, data[1] = caps 32+
         data: [
-            CapInternalData {
-                effective: (caps.effective >> 32) as u32,
-                permitted: (caps.permitted >> 32) as u32,
-                inheritable: (caps.inheritable >> 32) as u32,
-            },
             CapInternalData {
                 effective: caps.effective as u32,
                 permitted: caps.permitted as u32,
                 inheritable: caps.inheritable as u32,
+            },
+            CapInternalData {
+                effective: (caps.effective >> 32) as u32,
+                permitted: (caps.permitted >> 32) as u32,
+                inheritable: (caps.inheritable >> 32) as u32,
             },
         ],
     };
@@ -419,10 +421,13 @@ pub fn set_caps(caps: CapResult) -> anyhow::Result<()> {
 }
 
 pub fn set_keep_caps() -> anyhow::Result<()> {
-    let ret = unsafe { libc::prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP) };
+    // Lock securebits to prevent clearing before cap drop.
+    // SECBIT_NO_SETUID_FIXUP (4) | SECBIT_NO_SETUID_FIXUP_LOCKED (8) | SECBIT_KEEP_CAPS_LOCKED (32)
+    let bits = SECBIT_NO_SETUID_FIXUP | 8 | SECBIT_KEEP_CAPS_LOCKED;
+    let ret = unsafe { libc::prctl(PR_SET_SECUREBITS, bits) };
     if ret < 0 {
         Err(anyhow!(
-            "failed to set SECBIT_NO_SETUID_FIXUP: {}",
+            "failed to set securebits: {}",
             io::Error::last_os_error()
         ))
     } else {
