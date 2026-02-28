@@ -109,14 +109,42 @@ fn fork_and_wait() -> Result<()> {
 /// The reason we need this is because we actually need to attach to the
 /// *supervised* process, not the *supervisor* process, which exists in
 /// a different set of namespaces than the ones we want to attach to.
+///
+/// Tries `/proc/<pid>/task/<pid>/children` first (requires CONFIG_PROC_CHILDREN),
+/// then falls back to scanning `/proc` for processes whose PPid matches.
 fn first_child_pid_of(parent: libc::pid_t) -> Result<libc::pid_t> {
-    let child_set = fs::read_to_string(format!("/proc/{parent}/task/{parent}/children"))?;
-    let first_child = child_set.split(" ").collect::<Vec<_>>()[0];
-
-    match first_child.parse::<libc::pid_t>() {
-        Ok(v) => Ok(v),
-        _ => Err(anyhow!("failed to find child PID")),
+    // Fast path: use the children file if available (CONFIG_PROC_CHILDREN=y).
+    let children_path = format!("/proc/{parent}/task/{parent}/children");
+    if let Ok(child_set) = fs::read_to_string(&children_path) {
+        let first_child = child_set.split(' ').next().unwrap_or("");
+        if let Ok(v) = first_child.parse::<libc::pid_t>() {
+            return Ok(v);
+        }
     }
+
+    // Fallback: scan /proc for a process whose PPid matches parent.
+    let ppid_needle = format!("PPid:\t{parent}");
+    for entry in fs::read_dir("/proc")? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        // Only look at numeric directories (PIDs).
+        if !name_str.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            continue;
+        }
+        let status_path = format!("/proc/{name_str}/status");
+        if let Ok(status) = fs::read_to_string(&status_path) {
+            if status.lines().any(|line| line == ppid_needle) {
+                if let Ok(pid) = name_str.parse::<libc::pid_t>() {
+                    return Ok(pid);
+                }
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "failed to find child PID of {parent} (no children file, /proc scan found nothing)"
+    ))
 }
 
 fn render_uidgid_mappings(mappings: &[IdMapping]) -> String {
