@@ -1,5 +1,6 @@
 use crate::caps::CapabilityBit;
 use crate::namespace::Namespace;
+use crate::seccomp::SeccompFilter;
 use anyhow::{Result, bail};
 use libc::{gid_t, pid_t, uid_t};
 use serde::{Deserialize, Serialize};
@@ -74,6 +75,12 @@ pub struct ExecutableSpec {
     /// If `true`, sets `PR_SET_NO_NEW_PRIVS` before
     /// spawning the target executable.
     pub no_new_privs: bool,
+
+    /// An optional seccomp-bpf filter program. Applied after capabilities
+    /// are set and `PR_SET_NO_NEW_PRIVS` is enabled, but before `execvpe()`.
+    /// Requires `no_new_privs = true`.
+    #[serde(default)]
+    pub seccomp: Option<SeccompFilter>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
