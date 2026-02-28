@@ -146,7 +146,29 @@ impl Mountable for MountSpec {
         let target_p = target.as_ptr();
 
         if self.create_mountpoint {
-            fs::create_dir_all(&self.target)?;
+            if self.bind {
+                // For bind mounts, match the source type: if the source is a
+                // file/device, create an empty file at the target (not a directory).
+                // Bind-mounting a file onto a directory fails with EINVAL.
+                if let Some(ref src) = self.source {
+                    let is_dir = std::path::Path::new(src)
+                        .metadata()
+                        .map(|m| m.is_dir())
+                        .unwrap_or(true);
+                    if is_dir {
+                        fs::create_dir_all(&self.target)?;
+                    } else {
+                        if let Some(parent) = std::path::Path::new(&self.target).parent() {
+                            fs::create_dir_all(parent)?;
+                        }
+                        fs::File::create(&self.target)?;
+                    }
+                } else {
+                    fs::create_dir_all(&self.target)?;
+                }
+            } else {
+                fs::create_dir_all(&self.target)?;
+            }
         }
 
         let mut flags: c_ulong = libc::MS_SILENT;
@@ -163,10 +185,17 @@ impl Mountable for MountSpec {
             flags |= libc::MS_REC;
         }
 
+        let data_cstr = self.data.as_ref().map(|d| CString::new(d.as_str()).unwrap());
+        let data_ptr = data_cstr.as_ref().map(|c| c.as_ptr() as *const libc::c_void).unwrap_or(ptr::null());
+
         unsafe {
-            let rc = libc::mount(source_p, target_p, fstype_p, flags, ptr::null());
+            let rc = libc::mount(source_p, target_p, fstype_p, flags, data_ptr);
             if rc < 0 {
-                bail!("unable to mount");
+                let err = io::Error::last_os_error();
+                bail!(
+                    "unable to mount: source={:?} target={:?} fstype={:?} bind={} flags=0x{:x}: {}",
+                    self.source, self.target, self.fstype, self.bind, flags, err
+                );
             }
         }
 

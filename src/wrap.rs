@@ -321,6 +321,7 @@ impl CreateRequest {
             safe: false,
             create_mountpoint: false,
             read_only: false,
+            data: None,
         };
 
         oldroot
@@ -345,6 +346,7 @@ impl CreateRequest {
                 safe: true,
                 create_mountpoint: true,
                 read_only: false,
+                data: None,
             };
             stage_tmpfs
                 .mount()
@@ -365,6 +367,7 @@ impl CreateRequest {
                 safe: false,
                 create_mountpoint: false,
                 read_only: false,
+                data: None,
             };
             stage_bind
                 .mount()
@@ -384,6 +387,7 @@ impl CreateRequest {
             safe: false,
             create_mountpoint: false,
             read_only: false,
+            data: None,
         };
 
         newroot
@@ -407,6 +411,7 @@ impl CreateRequest {
             safe: true,
             create_mountpoint: false,
             read_only: false,
+            data: None,
         };
 
         procfs
@@ -426,6 +431,7 @@ impl CreateRequest {
                     safe: mount.safe,
                     create_mountpoint: mount.create_mountpoint,
                     read_only: mount.read_only,
+                    data: None,
                 };
 
                 parented_mount
