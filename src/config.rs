@@ -250,6 +250,9 @@ pub struct MountSpec {
 
     /// Whether the mount point should be mounted readonly.
     pub read_only: bool,
+
+    /// Optional mount data (e.g., "size=64m" for tmpfs).
+    pub data: Option<String>,
 }
 
 pub trait Mountable {
