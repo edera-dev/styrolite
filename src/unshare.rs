@@ -44,11 +44,14 @@ pub fn setns<'x>(
     let flags = iter.into_iter().fold(0, |acc, x| acc | to_clone_flags(*x));
     let pid_fd = pidfd_open(target_pid)?;
 
-    unsafe {
+    let result = unsafe {
         if libc::setns(pid_fd, flags) < 0 {
             Err(io::Error::last_os_error().into())
         } else {
             Ok(())
         }
-    }
+    };
+    // Always close pidfd regardless of setns result.
+    unsafe { libc::close(pid_fd); }
+    result
 }
