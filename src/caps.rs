@@ -355,6 +355,29 @@ fn capset(result: &CapInternalResult) -> anyhow::Result<()> {
     }
 }
 
+fn cap_data_to_result(data: &[CapInternalData; 2]) -> CapResult {
+    CapResult {
+        effective: ((data[1].effective as u64) << 32) | data[0].effective as u64,
+        permitted: ((data[1].permitted as u64) << 32) | data[0].permitted as u64,
+        inheritable: ((data[1].inheritable as u64) << 32) | data[0].inheritable as u64,
+    }
+}
+
+fn cap_result_to_data(caps: &CapResult) -> [CapInternalData; 2] {
+    [
+        CapInternalData {
+            effective: caps.effective as u32,
+            permitted: caps.permitted as u32,
+            inheritable: caps.inheritable as u32,
+        },
+        CapInternalData {
+            effective: (caps.effective >> 32) as u32,
+            permitted: (caps.permitted >> 32) as u32,
+            inheritable: (caps.inheritable >> 32) as u32,
+        },
+    ]
+}
+
 pub fn get_caps() -> anyhow::Result<CapResult> {
     let pid = std::process::id() as i32;
     let mut iresult = CapInternalResult {
@@ -367,23 +390,14 @@ pub fn get_caps() -> anyhow::Result<CapResult> {
 
     capget(&mut iresult)?;
 
-    let effective = ((iresult.data[0].effective as u64) << 32) | iresult.data[1].effective as u64;
-    let permitted = ((iresult.data[0].permitted as u64) << 32) | iresult.data[1].permitted as u64;
-    let inheritable =
-        ((iresult.data[0].inheritable as u64) << 32) | iresult.data[1].inheritable as u64;
-
-    let finalresult = CapResult {
-        effective,
-        permitted,
-        inheritable,
-    };
+    let result = cap_data_to_result(&iresult.data);
 
     debug!(
-        "get capabilities of pid {}: eff={:x} perm={:x} inh={:?}",
-        iresult.header.pid, effective, permitted, inheritable
+        "get capabilities of pid {}: eff={:x} perm={:x} inh={:x}",
+        iresult.header.pid, result.effective, result.permitted, result.inheritable
     );
 
-    Ok(finalresult)
+    Ok(result)
 }
 
 pub fn set_caps(caps: CapResult) -> anyhow::Result<()> {
@@ -399,18 +413,7 @@ pub fn set_caps(caps: CapResult) -> anyhow::Result<()> {
             version: _LINUX_CAPABILITY_VERSION_3,
             pid,
         },
-        data: [
-            CapInternalData {
-                effective: (caps.effective >> 32) as u32,
-                permitted: (caps.permitted >> 32) as u32,
-                inheritable: (caps.inheritable >> 32) as u32,
-            },
-            CapInternalData {
-                effective: caps.effective as u32,
-                permitted: caps.permitted as u32,
-                inheritable: caps.inheritable as u32,
-            },
-        ],
+        data: cap_result_to_data(&caps),
     };
 
     capset(&iresult)?;
@@ -427,5 +430,74 @@ pub fn set_keep_caps() -> anyhow::Result<()> {
         ))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cap_encoding_word_order() {
+        // Low caps only (0-31): CAP_CHOWN=0, CAP_NET_RAW=13, CAP_SETFCAP=31
+        let low_caps = CapabilityBit::raw_bits(&[
+            CapabilityBit::Chown,
+            CapabilityBit::NetRaw,
+            CapabilityBit::Setfcap,
+        ]);
+        let input = CapResult {
+            effective: low_caps,
+            permitted: low_caps,
+            inheritable: low_caps,
+        };
+        let data = cap_result_to_data(&input);
+        assert_eq!(
+            data[0].effective, low_caps as u32,
+            "data[0] must hold low 32 bits (caps 0-31)"
+        );
+        assert_eq!(
+            data[1].effective, 0u32,
+            "data[1] must be zero for low-only caps"
+        );
+        let rt = cap_data_to_result(&data);
+        assert_eq!(rt.effective, low_caps);
+
+        // High caps only (32-63): CAP_MAC_OVERRIDE=32, CAP_CHECKPOINT_RESTORE=40
+        let high_caps = CapabilityBit::raw_bits(&[
+            CapabilityBit::MacOverride,
+            CapabilityBit::CheckpointRestore,
+        ]);
+        let input = CapResult {
+            effective: high_caps,
+            permitted: high_caps,
+            inheritable: high_caps,
+        };
+        let data = cap_result_to_data(&input);
+        assert_eq!(
+            data[0].effective, 0u32,
+            "data[0] must be zero for high-only caps"
+        );
+        assert_eq!(
+            data[1].effective,
+            (high_caps >> 32) as u32,
+            "data[1] must hold high 32 bits (caps 32-63)"
+        );
+        let rt = cap_data_to_result(&data);
+        assert_eq!(rt.effective, high_caps);
+
+        // All caps: bits 0-40
+        let all_caps = CapabilityBit::raw_bits(CapabilityBit::ALL);
+        let input = CapResult {
+            effective: all_caps,
+            permitted: all_caps,
+            inheritable: all_caps,
+        };
+        let data = cap_result_to_data(&input);
+        assert_eq!(data[0].effective, all_caps as u32);
+        assert_eq!(data[1].effective, (all_caps >> 32) as u32);
+        let rt = cap_data_to_result(&data);
+        assert_eq!(rt.effective, all_caps);
+        assert_eq!(rt.permitted, all_caps);
+        assert_eq!(rt.inheritable, all_caps);
     }
 }
