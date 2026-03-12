@@ -525,7 +525,18 @@ impl Wrappable for CreateRequest {
 
             if target_ns.contains(&Namespace::User) {
                 debug!("child has dropped into its own userns, configuring from supervisor");
-                self.prepare_userns(pid)?;
+                // In the two-stage path, the child calls pivot_fs() before signaling.
+                // pivot_root() changes /proc for the parent too.
+                // If a PID namespace was created, the new /proc shows the child as PID 1
+                // (not its host PID), so we must use 1 to find it in /proc.
+                // Without a PID namespace, the new proc mount still shows global PIDs.
+                let userns_pid =
+                    if !skip_two_stage_userns && target_ns.contains(&Namespace::Pid) {
+                        1
+                    } else {
+                        pid
+                    };
+                self.prepare_userns(userns_pid)?;
             }
 
             // The supervisor has now configured the user namespace, so let the first process run.
@@ -548,9 +559,22 @@ impl Wrappable for CreateRequest {
 
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
-        if !skip_two_stage_userns && target_ns.contains(&Namespace::User) {
-            debug!("unsharing user namespace");
-            unshare(&vec![Namespace::User])?;
+        if !skip_two_stage_userns {
+            // The mount namespace was unshared in the parent under the initial user
+            // namespace context. Mount operations must happen before we enter the new
+            // user namespace, otherwise the child's user namespace won't own the mount
+            // namespace and operations on it will fail with EPERM.
+            if target_ns.contains(&Namespace::Mount) {
+                self.pivot_fs()?;
+            } else {
+                warn!("mount namespace not present in requested namespaces, trying to work anyway...");
+                warn!("this is an insecure configuration!");
+            }
+
+            if target_ns.contains(&Namespace::User) {
+                debug!("unsharing user namespace");
+                unshare(&vec![Namespace::User])?;
+            }
         }
 
         debug!("signalling supervisor to do configuration");
@@ -563,12 +587,15 @@ impl Wrappable for CreateRequest {
         let mut buf = [0u8; 8];
         cef.read_exact(&mut buf)?;
 
-        // We are configured, now do the mount stuff?
-        if target_ns.contains(&Namespace::Mount) {
-            self.pivot_fs()?;
-        } else {
-            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
-            warn!("this is an insecure configuration!");
+        if skip_two_stage_userns {
+            // In two-stage mode, mounts are deferred until after
+            // UID/GID namespace has been configured by the supervisor.
+            if target_ns.contains(&Namespace::Mount) {
+                self.pivot_fs()?;
+            } else {
+                warn!("mount namespace not present in requested namespaces, trying to work anyway...");
+                warn!("this is an insecure configuration!");
+            }
         }
 
         debug!("mount tree finalized, doing final prep");
