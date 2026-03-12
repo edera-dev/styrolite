@@ -117,11 +117,11 @@ impl Mountable for MountSpec {
             self.source
                 .as_deref()
                 .ok_or_else(|| anyhow!("source missing"))?,
-            libc::OPEN_TREE_CLOEXEC as u32,
+            libc::OPEN_TREE_CLOEXEC,
         )?;
 
         let mut attr: libc::mount_attr = unsafe { std::mem::zeroed() };
-        attr.attr_set |= libc::MOUNT_ATTR_RDONLY as u64;
+        attr.attr_set |= libc::MOUNT_ATTR_RDONLY;
         mount_setattr_fd(&tree, false, &attr)?;
 
         Ok(())

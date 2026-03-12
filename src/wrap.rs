@@ -305,7 +305,7 @@ impl CreateRequest {
         let mut rootfs = self
             .rootfs
             .clone()
-            .expect("expected rootfs to be configured");
+            .ok_or_else(|| anyhow!("expected rootfs to be configured"))?;
 
         let rootfs_readonly = self.rootfs_readonly.unwrap_or(false);
 
@@ -326,7 +326,7 @@ impl CreateRequest {
 
         oldroot
             .mount()
-            .expect("failed to unshare / in new mount namespace");
+            .map_err(|e| anyhow!("failed to unshare / in new mount namespace: {e}"))?;
 
         // If we want to clone the VFS root, e.g. for styrojail,
         // we have to do some special things to cope with that.
@@ -347,10 +347,14 @@ impl CreateRequest {
                 create_mountpoint: true,
                 read_only: false,
             };
-            stage_tmpfs.mount().expect("failed to mount staging tmpfs");
+            stage_tmpfs
+                .mount()
+                .map_err(|e| anyhow!("failed to mount staging tmpfs: {e}"))?;
 
-            std::fs::create_dir_all(&stage_root).expect("failed to create staging root dir");
-            std::fs::create_dir_all(&stage_old).expect("failed to create staging old dir");
+            fs::create_dir_all(&stage_root)
+                .map_err(|e| anyhow!("failed to create staging root dir: {e}"))?;
+            fs::create_dir_all(&stage_old)
+                .map_err(|e| anyhow!("failed to create staging old dir: {e}"))?;
 
             let stage_bind = MountSpec {
                 source: Some("/".to_string()),
@@ -365,7 +369,7 @@ impl CreateRequest {
             };
             stage_bind
                 .mount()
-                .expect("failed to bind / into staging root");
+                .map_err(|e| anyhow!("failed to bind / into staging root: {e}"))?;
 
             rootfs = stage_root.to_string();
         }
@@ -383,10 +387,14 @@ impl CreateRequest {
             read_only: false,
         };
 
-        newroot.mount().expect("failed to bind new rootfs");
+        newroot
+            .mount()
+            .map_err(|e| anyhow!("failed to bind new rootfs: {e}"))?;
 
         if rootfs_readonly {
-            newroot.seal().expect("failed to make new rootfs readonly");
+            newroot
+                .seal()
+                .map_err(|e| anyhow!("failed to make new rootfs readonly: {e}"))?;
         }
 
         // Mount /proc.
@@ -402,7 +410,9 @@ impl CreateRequest {
             read_only: false,
         };
 
-        procfs.mount().expect("failed to mount /proc");
+        procfs
+            .mount()
+            .map_err(|e| anyhow!("failed to mount /proc: {e}"))?;
 
         if let Some(mounts) = &self.mounts {
             for mount in mounts {
@@ -421,7 +431,7 @@ impl CreateRequest {
 
                 parented_mount
                     .mount()
-                    .expect("failed to process mount spec");
+                    .map_err(|e| anyhow!("failed to process mount spec {parented_target}: {e}"))?;
             }
         }
 
@@ -429,13 +439,16 @@ impl CreateRequest {
             for mutation in mutations {
                 match mutation {
                     Mutation::CreateDir(cdm) => {
-                        cdm.mutate(&rootfs).expect("failed to create directory");
+                        cdm.mutate(&rootfs)
+                            .map_err(|e| anyhow!("failed to create directory: {e}"))?;
                     }
                 };
             }
         }
 
-        newroot.pivot().expect("failed to pivot to new rootfs");
+        newroot
+            .pivot()
+            .map_err(|e| anyhow!("failed to pivot to new rootfs: {e}"))?;
 
         Ok(())
     }
@@ -525,7 +538,17 @@ impl Wrappable for CreateRequest {
 
             if target_ns.contains(&Namespace::User) {
                 debug!("child has dropped into its own userns, configuring from supervisor");
-                self.prepare_userns(pid)?;
+                // In the two-stage path, the child calls pivot_fs() before signaling.
+                // pivot_root() changes /proc for the parent too.
+                // If a PID namespace was created, the new /proc shows the child as PID 1
+                // (not its host PID), so we must use 1 to find it in /proc.
+                // Without a PID namespace, the new proc mount still shows global PIDs.
+                let userns_pid = if !skip_two_stage_userns && target_ns.contains(&Namespace::Pid) {
+                    1
+                } else {
+                    pid
+                };
+                self.prepare_userns(userns_pid)?;
             }
 
             // The supervisor has now configured the user namespace, so let the first process run.
@@ -548,9 +571,24 @@ impl Wrappable for CreateRequest {
 
         let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
-        if !skip_two_stage_userns && target_ns.contains(&Namespace::User) {
-            debug!("unsharing user namespace");
-            unshare(&vec![Namespace::User])?;
+        if !skip_two_stage_userns {
+            // The mount namespace was unshared in the parent under the initial user
+            // namespace context. Mount operations must happen before we enter the new
+            // user namespace, otherwise the child's user namespace won't own the mount
+            // namespace and operations on it will fail with EPERM.
+            if target_ns.contains(&Namespace::Mount) {
+                self.pivot_fs()?;
+            } else {
+                warn!(
+                    "mount namespace not present in requested namespaces, trying to work anyway..."
+                );
+                warn!("this is an insecure configuration!");
+            }
+
+            if target_ns.contains(&Namespace::User) {
+                debug!("unsharing user namespace");
+                unshare(&vec![Namespace::User])?;
+            }
         }
 
         debug!("signalling supervisor to do configuration");
@@ -563,12 +601,17 @@ impl Wrappable for CreateRequest {
         let mut buf = [0u8; 8];
         cef.read_exact(&mut buf)?;
 
-        // We are configured, now do the mount stuff?
-        if target_ns.contains(&Namespace::Mount) {
-            self.pivot_fs()?;
-        } else {
-            warn!("mount namespace not present in requested namespaces, trying to work anyway...");
-            warn!("this is an insecure configuration!");
+        if skip_two_stage_userns {
+            // In two-stage mode, mounts are deferred until after
+            // UID/GID namespace has been configured by the supervisor.
+            if target_ns.contains(&Namespace::Mount) {
+                self.pivot_fs()?;
+            } else {
+                warn!(
+                    "mount namespace not present in requested namespaces, trying to work anyway..."
+                );
+                warn!("this is an insecure configuration!");
+            }
         }
 
         debug!("mount tree finalized, doing final prep");
@@ -874,4 +917,168 @@ fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::CreateRequest;
+    use crate::namespace::Namespace;
+    use crate::unshare::unshare;
+    use nix::sys::wait::{WaitStatus, waitpid};
+    use nix::unistd::{ForkResult, fork, geteuid};
+
+    /// Run a closure in a forked child. Returns true if the child exits 0.
+    /// Uses _exit() to skip Rust destructors in the child.
+    unsafe fn in_child<F: FnOnce() -> i32>(f: F) -> bool {
+        match unsafe { fork() }.expect("fork failed") {
+            ForkResult::Child => unsafe { libc::_exit(f()) },
+            ForkResult::Parent { child } => matches!(
+                waitpid(child, None).expect("waitpid failed"),
+                WaitStatus::Exited(_, 0)
+            ),
+        }
+    }
+
+    fn is_root() -> bool {
+        geteuid().is_root()
+    }
+
+    /// Create a minimal rootfs with a /proc mountpoint for pivot_fs() tests.
+    /// Returns the TempDir so the caller keeps it alive. Children use _exit()
+    /// and never run its destructor; the parent drops it after waitpid().
+    fn make_minimal_rootfs() -> Option<tempfile::TempDir> {
+        let dir = tempfile::TempDir::new().ok()?;
+        std::fs::create_dir_all(dir.path().join("proc")).ok()?;
+        Some(dir)
+    }
+
+    fn request_with_rootfs(dir: &tempfile::TempDir) -> CreateRequest {
+        CreateRequest {
+            rootfs: Some(dir.path().to_string_lossy().into_owned()),
+            workload_id: Some("test".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// Two-stage path (skip_two_stage_userns=false): mount namespace is unshared
+    /// in the initial user namespace context (root). pivot_fs() must succeed BEFORE
+    /// entering the new user namespace, because the mount namespace is owned by
+    /// the initial user namespace.
+    ///
+    /// Root-only: creating a mount namespace in the initial user namespace context
+    /// requires CAP_SYS_ADMIN there. An unprivileged user namespace unshare followed
+    /// by a mount namespace unshare results in locked mounts (propagation can't be
+    /// changed), which is a different and incompatible scenario.
+    #[test]
+    fn root_only_two_stage_pivot_fs_before_user_ns_succeeds() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let Some(rootfs_dir) = make_minimal_rootfs() else {
+                    return 1;
+                };
+                let req = request_with_rootfs(&rootfs_dir);
+                if unshare(&[Namespace::Mount]).is_err() {
+                    return 2;
+                }
+                if req.pivot_fs().is_err() {
+                    return 3;
+                }
+                if unshare(&[Namespace::User]).is_err() {
+                    return 4;
+                }
+                0
+            })
+        });
+    }
+
+    /// Regression test: pivot_fs() called after entering the new user namespace
+    /// fails with EPERM — the mount namespace is owned by the initial user namespace,
+    /// not the new one, so mount operations require CAP_SYS_ADMIN in the wrong ns.
+    ///
+    /// Root-only: same reasoning as two_stage_pivot_fs_before_user_ns_succeeds.
+    #[test]
+    fn root_only_two_stage_pivot_fs_after_user_ns_fails() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let Some(rootfs_dir) = make_minimal_rootfs() else {
+                    return 1;
+                };
+                let req = request_with_rootfs(&rootfs_dir);
+                if unshare(&[Namespace::Mount]).is_err() {
+                    return 1;
+                }
+                if unshare(&[Namespace::User]).is_err() {
+                    return 1;
+                }
+                // pivot_fs after user ns must fail
+                if req.pivot_fs().is_ok() { 1 } else { 0 }
+            })
+        });
+    }
+
+    /// Skip-two-stage path (skip_two_stage_userns=true): all namespaces unshared
+    /// together atomically, so the user namespace owns the mount and pid namespaces
+    /// from creation (mounts are not locked). The forked child (PID 1 in the new
+    /// pid namespace) calls pivot_fs() and it must succeed.
+    #[test]
+    fn root_only_skip_two_stage_pivot_fs_succeeds() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let Some(rootfs_dir) = make_minimal_rootfs() else {
+                    return 1;
+                };
+                let req = request_with_rootfs(&rootfs_dir);
+                if unshare(&[Namespace::User, Namespace::Mount, Namespace::Pid]).is_err() {
+                    return 2;
+                }
+                // Fork so the child enters the new pid namespace as PID 1.
+                // proc mount in pivot_fs() requires being inside the owned pid namespace.
+                let child = match fork() {
+                    Ok(ForkResult::Child) => {
+                        libc::_exit(if req.pivot_fs().is_err() { 1 } else { 0 })
+                    }
+                    Ok(ForkResult::Parent { child }) => child,
+                    Err(_) => return 3,
+                };
+                match waitpid(child, None) {
+                    Ok(WaitStatus::Exited(_, 0)) => 0,
+                    _ => 4,
+                }
+            })
+        });
+    }
+
+    /// Mount-only namespace (no user namespace): pivot_fs() succeeds.
+    /// Root-only: creating a mount namespace without any user namespace requires
+    /// CAP_SYS_ADMIN in the initial user namespace.
+    #[test]
+    fn root_only_mount_only_ns_pivot_fs_succeeds() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let Some(rootfs_dir) = make_minimal_rootfs() else {
+                    return 1;
+                };
+                let req = request_with_rootfs(&rootfs_dir);
+                if unshare(&[Namespace::Mount]).is_err() {
+                    return 2;
+                }
+                if req.pivot_fs().is_err() {
+                    return 3;
+                }
+                0
+            })
+        });
+    }
 }
