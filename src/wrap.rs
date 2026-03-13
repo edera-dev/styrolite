@@ -1,10 +1,8 @@
 use std::env;
 use std::ffi::CString;
 use std::fs;
-use std::fs::File;
-use std::io::{Error, Read, Write};
+use std::io::Error;
 use std::mem::MaybeUninit;
-use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process;
 use std::ptr;
@@ -23,6 +21,9 @@ use libc::{
     self, PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, PR_CAPBSET_DROP,
     PR_SET_NO_NEW_PRIVS, c_int, prctl,
 };
+use nix::sys::eventfd::{EfdFlags, EventFd};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+use nix::unistd::{ForkResult, Pid, fork};
 
 use log::{debug, error, warn};
 
@@ -59,24 +60,20 @@ fn set_process_limit(resource: RLimit, limit: Option<u64>) -> Result<()> {
 }
 
 fn reap_children() -> Result<()> {
-    while unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) } > 0 {}
-
+    loop {
+        match waitpid(None, Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) | Err(_) => break,
+            _ => {}
+        }
+    }
     Ok(())
 }
 
 fn wait_for_pid(pid: libc::pid_t) -> Result<i32> {
-    let status = unsafe {
-        let mut st: MaybeUninit<i32> = MaybeUninit::uninit();
-
-        if libc::waitpid(pid, st.as_mut_ptr(), 0) < 0 {
-            panic!("waitpid of child process failed");
-        }
-
-        st.assume_init()
-    };
-
-    let exitcode = libc::WEXITSTATUS(status);
-    Ok(exitcode)
+    match waitpid(Pid::from_raw(pid), None)? {
+        WaitStatus::Exited(_, code) => Ok(code),
+        _ => Ok(1),
+    }
 }
 
 fn fork_and_wait() -> Result<()> {
@@ -85,15 +82,17 @@ fn fork_and_wait() -> Result<()> {
         process::exit(1)
     }
 
-    let pid = unsafe { libc::fork() };
-    if pid > 0 {
-        signal::store_child_pid(pid);
-        debug!("child pid = {pid}");
-        let exitcode = wait_for_pid(pid)?;
-        debug!("[pid {pid}] exitcode = {exitcode}");
-        debug!("reaping children of supervisor!");
-        reap_children()?;
-        process::exit(exitcode);
+    match unsafe { fork() }? {
+        ForkResult::Parent { child } => {
+            signal::store_child_pid(child.as_raw());
+            debug!("child pid = {}", child.as_raw());
+            let exitcode = wait_for_pid(child.as_raw())?;
+            debug!("[pid {}] exitcode = {exitcode}", child.as_raw());
+            debug!("reaping children of supervisor!");
+            reap_children()?;
+            process::exit(exitcode);
+        }
+        ForkResult::Child => {}
     }
 
     if let Err(e) = unsafe { signal::reset_child_signal_handlers() } {
@@ -523,53 +522,49 @@ impl Wrappable for CreateRequest {
         }
 
         debug!("all namespaces unshared -- forking child");
-        let parent_efd = unsafe { libc::eventfd(0, libc::EFD_SEMAPHORE) };
-        let child_efd = unsafe { libc::eventfd(0, libc::EFD_SEMAPHORE) };
-        let pid = unsafe { libc::fork() };
-        if pid > 0 {
-            signal::store_child_pid(pid);
+        let parent_efd = EventFd::from_value_and_flags(0, EfdFlags::EFD_SEMAPHORE)?;
+        let child_efd = EventFd::from_value_and_flags(0, EfdFlags::EFD_SEMAPHORE)?;
+        match unsafe { fork() }? {
+            ForkResult::Parent { child } => {
+                signal::store_child_pid(child.as_raw());
 
-            debug!("child pid = {pid}");
-            let mut pef = unsafe { File::from_raw_fd(parent_efd) };
-            debug!("parent efd = {parent_efd}");
-            debug!("child efd = {child_efd}");
-            let mut buf = [0u8; 8];
-            pef.read_exact(&mut buf)?;
+                debug!("child pid = {}", child.as_raw());
+                parent_efd.read()?;
 
-            if target_ns.contains(&Namespace::User) {
-                debug!("child has dropped into its own userns, configuring from supervisor");
-                // In the two-stage path, the child calls pivot_fs() before signaling.
-                // pivot_root() changes /proc for the parent too.
-                // If a PID namespace was created, the new /proc shows the child as PID 1
-                // (not its host PID), so we must use 1 to find it in /proc.
-                // Without a PID namespace, the new proc mount still shows global PIDs.
-                let userns_pid = if !skip_two_stage_userns && target_ns.contains(&Namespace::Pid) {
-                    1
-                } else {
-                    pid
-                };
-                self.prepare_userns(userns_pid)?;
+                if target_ns.contains(&Namespace::User) {
+                    debug!("child has dropped into its own userns, configuring from supervisor");
+                    // In the two-stage path, the child calls pivot_fs() before signaling.
+                    // pivot_root() changes /proc for the parent too.
+                    // If a PID namespace was created, the new /proc shows the child as PID 1
+                    // (not its host PID), so we must use 1 to find it in /proc.
+                    // Without a PID namespace, the new proc mount still shows global PIDs.
+                    let userns_pid =
+                        if !skip_two_stage_userns && target_ns.contains(&Namespace::Pid) {
+                            1
+                        } else {
+                            child.as_raw()
+                        };
+                    self.prepare_userns(userns_pid)?;
+                }
+
+                // The supervisor has now configured the user namespace, so let the first process run.
+                child_efd.write(1)?;
+
+                let exitcode = wait_for_pid(child.as_raw())?;
+                debug!("[pid {}] exitcode = {exitcode}", child.as_raw());
+
+                debug!("reaping children of supervisor!");
+                reap_children()?;
+
+                process::exit(exitcode);
             }
-
-            // The supervisor has now configured the user namespace, so let the first process run.
-            let mut cef = unsafe { File::from_raw_fd(child_efd) };
-            cef.write_all(&1_u64.to_ne_bytes())?;
-
-            let exitcode = wait_for_pid(pid)?;
-            debug!("[pid {pid}] exitcode = {exitcode}");
-
-            debug!("reaping children of supervisor!");
-            reap_children()?;
-
-            process::exit(exitcode);
+            ForkResult::Child => {}
         }
 
         if let Err(e) = unsafe { signal::reset_child_signal_handlers() } {
             error!("Failed to reset child signal handlers: {e}");
             process::exit(1);
         }
-
-        let mut pef = unsafe { File::from_raw_fd(parent_efd) };
 
         if !skip_two_stage_userns {
             // The mount namespace was unshared in the parent under the initial user
@@ -592,14 +587,11 @@ impl Wrappable for CreateRequest {
         }
 
         debug!("signalling supervisor to do configuration");
-        pef.write_all(&2_u64.to_ne_bytes())?;
-        pef.flush()?;
+        parent_efd.write(2)?;
 
         // Wait for completion from the supervisor before launching the initial process
         // for this container.
-        let mut cef = unsafe { File::from_raw_fd(child_efd) };
-        let mut buf = [0u8; 8];
-        cef.read_exact(&mut buf)?;
+        child_efd.read()?;
 
         if skip_two_stage_userns {
             // In two-stage mode, mounts are deferred until after
