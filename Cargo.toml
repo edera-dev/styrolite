@@ -11,7 +11,7 @@ edition = "2024"
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 env_logger = "0.11.8"
-libc = "0.2.182"
+libc = "0.2.183"
 log = "0.4.29"
 mktemp-rs = "0.2.0"
 nix = { version = "0.31.2", features = ["process", "signal", "user"] }
