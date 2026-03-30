@@ -122,6 +122,7 @@ fn first_child_pid_of(parent: libc::pid_t) -> Result<libc::pid_t> {
     }
 
     // Fallback: scan /proc for a process whose PPid matches parent.
+    debug!("children file unavailable for pid {parent}, falling back to /proc scan");
     let ppid_needle = format!("PPid:\t{parent}");
     for entry in fs::read_dir("/proc")? {
         let entry = entry?;
@@ -144,9 +145,7 @@ fn first_child_pid_of(parent: libc::pid_t) -> Result<libc::pid_t> {
         }
     }
 
-    Err(anyhow!(
-        "failed to find child PID of {parent} (no children file, /proc scan found nothing)"
-    ))
+    Err(anyhow!("failed to find child PID of {parent}"))
 }
 
 fn render_uidgid_mappings(mappings: &[IdMapping]) -> String {
