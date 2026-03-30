@@ -33,14 +33,7 @@ impl SeccompFilter {
             filter: filters.as_ptr() as *mut _,
         };
 
-        let ret = unsafe {
-            libc::syscall(
-                libc::SYS_seccomp,
-                1u64,
-                1u64,
-                &prog as *const _,
-            )
-        };
+        let ret = unsafe { libc::syscall(libc::SYS_seccomp, 1u64, 1u64, &prog as *const _) };
         if ret != 0 {
             return Err(std::io::Error::last_os_error());
         }
