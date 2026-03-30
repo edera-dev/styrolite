@@ -147,7 +147,9 @@ impl Mountable for MountSpec {
 
         if self.create_mountpoint {
             let source_is_file = self.bind
-                && self.source.as_deref()
+                && self
+                    .source
+                    .as_deref()
                     .and_then(|s| std::path::Path::new(s).metadata().ok())
                     .map(|m| !m.is_dir())
                     .unwrap_or(false);
@@ -176,8 +178,14 @@ impl Mountable for MountSpec {
             flags |= libc::MS_REC;
         }
 
-        let data_cstr = self.data.as_ref().map(|d| CString::new(d.as_str()).unwrap());
-        let data_ptr = data_cstr.as_ref().map(|c| c.as_ptr() as *const libc::c_void).unwrap_or(ptr::null());
+        let data_cstr = self
+            .data
+            .as_ref()
+            .map(|d| CString::new(d.as_str()).unwrap());
+        let data_ptr = data_cstr
+            .as_ref()
+            .map(|c| c.as_ptr() as *const libc::c_void)
+            .unwrap_or(ptr::null());
 
         unsafe {
             let rc = libc::mount(source_p, target_p, fstype_p, flags, data_ptr);
@@ -185,7 +193,12 @@ impl Mountable for MountSpec {
                 let err = io::Error::last_os_error();
                 bail!(
                     "unable to mount: source={:?} target={:?} fstype={:?} bind={} flags=0x{:x}: {}",
-                    self.source, self.target, self.fstype, self.bind, flags, err
+                    self.source,
+                    self.target,
+                    self.fstype,
+                    self.bind,
+                    flags,
+                    err
                 );
             }
         }
