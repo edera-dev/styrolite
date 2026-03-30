@@ -663,6 +663,13 @@ impl ExecutableSpec {
             self.set_no_new_privs()?;
         }
 
+        if let Some(filter) = &self.seccomp {
+            if !self.no_new_privs {
+                bail!("seccomp filter requires no_new_privs = true");
+            }
+            unsafe { filter.install()? };
+        }
+
         unsafe {
             if libc::execvpe(
                 program_cstring.as_ptr(),
