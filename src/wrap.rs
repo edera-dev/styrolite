@@ -128,20 +128,15 @@ fn first_child_pid_of(parent: libc::pid_t) -> Result<libc::pid_t> {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if !name_str
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_digit())
-        {
+        if !name_str.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             continue;
         }
         let status_path = format!("/proc/{name_str}/status");
-        if let Ok(status) = fs::read_to_string(&status_path) {
-            if status.lines().any(|line| line == ppid_needle) {
-                if let Ok(pid) = name_str.parse::<libc::pid_t>() {
-                    return Ok(pid);
-                }
-            }
+        if let Ok(status) = fs::read_to_string(&status_path)
+            && status.lines().any(|line| line == ppid_needle)
+            && let Ok(pid) = name_str.parse::<libc::pid_t>()
+        {
+            return Ok(pid);
         }
     }
 
