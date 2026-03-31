@@ -68,6 +68,10 @@ pub struct ExecutableSpec {
     /// These GIDs are relative to the user namespace that is optionally set up.
     pub gid: Option<gid_t>,
 
+    /// Optional supplemental GIDs to assume, in addition to any primary GID.
+    /// These GIDs are relative to the user namespace that is optionally set up.
+    pub supplemental_gids: Option<Vec<gid_t>>,
+
     /// An optional set of process-specific resource limits.
     /// If this set is not provided, setrlimit(2) will not be called.
     pub process_limits: Option<ProcessResourceLimits>,

@@ -645,7 +645,7 @@ impl Wrappable for CreateRequest {
         set_keep_caps()?;
         // Set these *first*, before we exec. Otherwise
         // we may not be able to switch after dropping caps.
-        apply_gid_uid(self.exec.gid, self.exec.uid)?;
+        apply_gid_uid(self.exec.gid, self.exec.uid, self.exec.supplemental_gids.as_ref())?;
         // Now, we can synchronize effective/inherited/permitted caps
         // as a final step.
         apply_capabilities(self.capabilities.as_ref())?;
@@ -856,7 +856,7 @@ impl Mutatable for CreateDirMutation {
     }
 }
 
-fn apply_gid_uid(gid: Option<u32>, uid: Option<u32>) -> Result<()> {
+fn apply_gid_uid(gid: Option<u32>, uid: Option<u32>, supplemental_gids: Option<&Vec<u32>>) -> Result<()> {
     // NOTE - order is important here - must change GID *before* changing UID, to avoid
     // locking oneself out of the GID change with an "operation not permitted" error
     if let Some(target_gid) = gid {
@@ -865,6 +865,16 @@ fn apply_gid_uid(gid: Option<u32>, uid: Option<u32>) -> Result<()> {
             // because we are already running as the target GID.
             if libc::getgid() != target_gid && libc::setgid(target_gid as libc::gid_t) < 0 {
                 warn!("unable to set target GID: {:?}", Error::last_os_error());
+            }
+        }
+    }
+
+    // Set supplemental gids, if any. As with changing the primary gid, this must happen before the UID shift.
+    if let Some(target_supplemental_gids) = supplemental_gids {
+        unsafe {
+            let gids_libc: Vec<libc::gid_t> = target_supplemental_gids.iter().map(|g| *g as libc::gid_t).collect();
+            if libc::setgroups(gids_libc.len(), gids_libc.as_ptr()) < 0 {
+                warn!("unable to set supplemental GIDs: {:?}", Error::last_os_error());
             }
         }
     }
