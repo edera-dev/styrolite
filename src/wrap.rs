@@ -840,6 +840,8 @@ impl Wrappable for AttachRequest {
         debug!("all namespaces joined -- forking child");
         fork_and_wait()?;
 
+        apply_gid_uid(self.exec.gid, self.exec.uid)?;
+
         self.exec.execute()
     }
 }
