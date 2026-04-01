@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/edera-dev/styrolite/compare/v0.2.2...v0.3.0) - 2026-04-01
+
+### Other
+
+- Support supplemental GIDs
+- Attach needs to apply guid/uid
+- Prefer owned types for filedescriptors where possible
+- Add data field to MountSpec
+- Fallback proc scan for first_child_pid_of for kernels without CONFIG_PROC_CHILDREN
+- Add seccomp-bpf filter support with TSYNC
+
 ## [0.1.1](https://github.com/edera-dev/styrolite/releases/tag/v0.1.1) - 2025-10-16
 
 ### Added
