@@ -201,6 +201,11 @@ impl CreateRequestBuilder {
         self
     }
 
+    pub fn set_supplemental_gids(mut self, gids: Vec<gid_t>) -> CreateRequestBuilder {
+        self.config.exec.supplemental_gids = gids.into();
+        self
+    }
+
     pub fn set_no_new_privs(mut self, no_new_privs: bool) -> CreateRequestBuilder {
         self.config.exec.no_new_privs = no_new_privs;
         self
