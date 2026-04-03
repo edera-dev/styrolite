@@ -639,6 +639,11 @@ impl Wrappable for CreateRequest {
 
         debug!("mount tree finalized, doing final prep");
 
+        // Ensure the process receives the desired out-of-memory score adjustment.
+        if let Some(score) = self.exec.oom_score_adj {
+            fs::write("/proc/self/oom_score_adj", score.to_string())?;
+        }
+
         // We need to toggle SECBIT before we change UID/GID,
         // or else changing UID/GID may cause us to lose the capabilities
         // we need to explicitly drop capabilities later on.
@@ -840,6 +845,11 @@ impl Wrappable for AttachRequest {
         }
 
         apply_capabilities(self.capabilities.as_ref())?;
+
+        // Ensure the process receives the desired out-of-memory score adjustment.
+        if let Some(score) = self.exec.oom_score_adj {
+            fs::write("/proc/self/oom_score_adj", score.to_string())?;
+        }
 
         debug!("all namespaces joined -- forking child");
         fork_and_wait()?;

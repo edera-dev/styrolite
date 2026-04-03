@@ -97,6 +97,11 @@ impl AttachRequestBuilder {
         self
     }
 
+    pub fn set_oom_score_adj(mut self, score: i32) -> AttachRequestBuilder {
+        self.config.exec.oom_score_adj = Some(score);
+        self
+    }
+
     pub fn push_namespace(mut self, ns: Namespace) -> AttachRequestBuilder {
         if self.config.namespaces.is_none() {
             self.config.namespaces = vec![].into();
@@ -208,6 +213,11 @@ impl CreateRequestBuilder {
 
     pub fn set_no_new_privs(mut self, no_new_privs: bool) -> CreateRequestBuilder {
         self.config.exec.no_new_privs = no_new_privs;
+        self
+    }
+
+    pub fn set_oom_score_adj(mut self, score: i32) -> CreateRequestBuilder {
+        self.config.exec.oom_score_adj = Some(score);
         self
     }
 
