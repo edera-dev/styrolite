@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/edera-dev/styrolite/compare/v0.3.0...v0.3.1) - 2026-04-07
+
+### Other
+
+- *(wrap)* add oom_score_adj to exec specs ([#124](https://github.com/edera-dev/styrolite/pull/124))
+
 ## [0.3.0](https://github.com/edera-dev/styrolite/compare/v0.2.2...v0.3.0) - 2026-04-01
 
 ### Other
