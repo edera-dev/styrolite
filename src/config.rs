@@ -85,6 +85,9 @@ pub struct ExecutableSpec {
     /// Requires `no_new_privs = true`.
     #[serde(default)]
     pub seccomp: Option<SeccompFilter>,
+
+    /// An optional out-of-memory score adjustment value.
+    pub oom_score_adj: Option<i32>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
