@@ -644,20 +644,7 @@ impl Wrappable for CreateRequest {
             fs::write("/proc/self/oom_score_adj", score.to_string())?;
         }
 
-        // We need to toggle SECBIT before we change UID/GID,
-        // or else changing UID/GID may cause us to lose the capabilities
-        // we need to explicitly drop capabilities later on.
-        set_keep_caps()?;
-        // Set these *first*, before we exec. Otherwise
-        // we may not be able to switch after dropping caps.
-        apply_gid_uid(
-            self.exec.gid,
-            self.exec.uid,
-            self.exec.supplemental_gids.as_ref(),
-        )?;
-        // Now, we can synchronize effective/inherited/permitted caps
-        // as a final step.
-        apply_capabilities(self.capabilities.as_ref())?;
+        preexec_prep(&self.exec, self.capabilities.as_ref())?;
 
         debug!("ready to launch workload");
         self.exec.execute()
@@ -844,8 +831,6 @@ impl Wrappable for AttachRequest {
             warn!("unable to set process limits");
         }
 
-        apply_capabilities(self.capabilities.as_ref())?;
-
         // Ensure the process receives the desired out-of-memory score adjustment.
         if let Some(score) = self.exec.oom_score_adj {
             fs::write("/proc/self/oom_score_adj", score.to_string())?;
@@ -854,11 +839,7 @@ impl Wrappable for AttachRequest {
         debug!("all namespaces joined -- forking child");
         fork_and_wait()?;
 
-        apply_gid_uid(
-            self.exec.gid,
-            self.exec.uid,
-            self.exec.supplemental_gids.as_ref(),
-        )?;
+        preexec_prep(&self.exec, self.capabilities.as_ref())?;
 
         self.exec.execute()
     }
@@ -989,13 +970,41 @@ fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
     Ok(())
 }
 
+/// The ordered final prep that runs after namespaces are set up and right
+/// before execve(2). The sequence MUST be:
+///
+/// 1. `set_keep_caps` (SECBIT_NO_SETUID_FIXUP) so the kernel does not clear
+///    the permitted/effective cap sets on a uid 0 <-> non-zero transition.
+/// 2. `apply_gid_uid` to drop primary GID, supplemental GIDs, and UID.
+/// 3. `apply_capabilities` to apply the workload's final cap raises/drops.
+///
+/// Both `CreateRequest::wrap` and `AttachRequest::wrap` must run this
+/// sequence.
+fn preexec_prep(exec: &ExecutableSpec, capabilities: Option<&Capabilities>) -> Result<()> {
+    // We need to toggle SECBIT before we change UID/GID,
+    // or else changing UID/GID may cause us to lose the capabilities
+    // we need to explicitly drop capabilities later on.
+    set_keep_caps()?;
+    // Set these *first*, before we exec. Otherwise
+    // we may not be able to switch after dropping caps.
+    apply_gid_uid(exec.gid, exec.uid, exec.supplemental_gids.as_ref())?;
+    // Now, we can synchronize effective/inherited/permitted caps
+    // as a final step.
+    apply_capabilities(capabilities)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::config::CreateRequest;
+    use super::{apply_capabilities, apply_gid_uid, preexec_prep};
+    use crate::caps::{CapabilityBit, get_caps};
+    use crate::config::{Capabilities, CreateRequest, ExecutableSpec};
     use crate::namespace::Namespace;
     use crate::unshare::unshare;
     use nix::sys::wait::{WaitStatus, waitpid};
     use nix::unistd::{ForkResult, fork, geteuid};
+
+    const NOBODY_UID: u32 = 65534;
 
     /// Run a closure in a forked child. Returns true if the child exits 0.
     /// Uses _exit() to skip Rust destructors in the child.
@@ -1146,6 +1155,78 @@ mod tests {
                 }
                 if req.pivot_fs().is_err() {
                     return 3;
+                }
+                0
+            })
+        });
+    }
+
+    #[test]
+    fn root_only_apply_exec_prep_preserves_raised_cap_across_uid_change() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let exec = ExecutableSpec {
+                    uid: Some(NOBODY_UID),
+                    gid: Some(NOBODY_UID),
+                    ..Default::default()
+                };
+                let caps = Capabilities {
+                    raise: Some(vec!["CAP_NET_RAW".to_string()]),
+                    raise_ambient: None,
+                    drop: None,
+                };
+                if preexec_prep(&exec, Some(&caps)).is_err() {
+                    return 1;
+                }
+                let Ok(now) = get_caps() else {
+                    return 2;
+                };
+                if !CapabilityBit::NetRaw.get_from(now.permitted) {
+                    return 3;
+                }
+                if !CapabilityBit::NetRaw.get_from(now.effective) {
+                    return 4;
+                }
+                0
+            })
+        });
+    }
+
+    #[test]
+    fn root_only_raise_then_setuid_without_keep_caps_drops_cap() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let caps = Capabilities {
+                    raise: Some(vec!["CAP_NET_RAW".to_string()]),
+                    raise_ambient: None,
+                    drop: None,
+                };
+                if apply_capabilities(Some(&caps)).is_err() {
+                    return 1;
+                }
+                let Ok(before) = get_caps() else {
+                    return 2;
+                };
+                if !CapabilityBit::NetRaw.get_from(before.effective) {
+                    return 3;
+                }
+                if apply_gid_uid(Some(NOBODY_UID), Some(NOBODY_UID), None).is_err() {
+                    return 4;
+                }
+                let Ok(after) = get_caps() else {
+                    return 5;
+                };
+                if CapabilityBit::NetRaw.get_from(after.permitted) {
+                    return 6;
+                }
+                if CapabilityBit::NetRaw.get_from(after.effective) {
+                    return 7;
                 }
                 0
             })
