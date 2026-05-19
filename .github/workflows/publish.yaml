@@ -42,7 +42,7 @@ jobs:
     runs-on: '${{ matrix.platform.on }}'
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: audit
 
@@ -93,7 +93,7 @@ jobs:
 
       - name: generate cultivator token
         if: ${{ github.event_name == 'release' }}
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: generate-token
         with:
           app-id: "${{ secrets.EDERA_CULTIVATION_APP_ID }}"
