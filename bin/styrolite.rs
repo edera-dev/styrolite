@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
-use env_logger::Env;
+use env_logger::{Env, fmt::TimestampPrecision};
 use styrolite::config::{Config, Wrappable};
 
 fn main() -> Result<()> {
@@ -12,7 +12,9 @@ fn main() -> Result<()> {
         panic!("config file did not exist");
     }
 
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format_timestamp(Some(TimestampPrecision::Micros))
+        .init();
 
     let config: Config = serde_json::from_slice(&fs::read(&config_path)?)?;
     match config {
