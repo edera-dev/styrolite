@@ -16,6 +16,7 @@ use crate::config::{
 use crate::namespace::Namespace;
 use crate::signal;
 use crate::unshare::{setns, unshare};
+use anyhow::Context;
 use anyhow::{Result, anyhow, bail};
 use libc::{
     self, PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE, PR_CAPBSET_DROP,
@@ -644,6 +645,11 @@ impl Wrappable for CreateRequest {
             fs::write("/proc/self/oom_score_adj", score.to_string())?;
         }
 
+        // Bind the workload's terminal over /dev/console and hand the
+        // workload uid ownership of it. We must do this here, after we have moved into
+        // the mount/userns, but before we drop CAP_SYS_ADMIN/CAP_CHOWN.
+        setup_console(self.exec.uid)?;
+
         preexec_prep(&self.exec, self.capabilities.as_ref())?;
 
         debug!("ready to launch workload");
@@ -894,6 +900,62 @@ fn apply_gid_uid(
             // because we are already running as the target UID.
             if libc::getuid() != target_uid && libc::setuid(target_uid as libc::uid_t) < 0 {
                 warn!("unable to set target UID: {:?}", Error::last_os_error());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Similar to what runc and others do: if we have an exec UID override, bind a pty to /dev/console
+/// with the correct UID ownership, so non-root stuff with that UID can open/write to console.
+/// Note that we intentionally only do this for CreateRequest, where we control/create the mount namespace.
+fn setup_console(uid: Option<u32>) -> Result<()> {
+    // Only do the setup if we have an exec UID, otherwise there's no point.
+    if let Some(exec_uid) = uid {
+        let Some(tty_fd) = [0, 1, 2]
+            .into_iter()
+            .find(|fd| unsafe { libc::isatty(*fd) } == 1)
+        else {
+            return Ok(());
+        };
+
+        let pts_path =
+            fs::read_link(format!("/proc/self/fd/{tty_fd}")).context("could not read TTY FD")?;
+
+        // If /dev/console isn't here, we should be fine to create it and bind over it,
+        // rather than bind over the existing one.
+        if !std::path::Path::new("/dev/console").exists() {
+            fs::File::create("/dev/console").context("could not create /dev/console stub")?;
+        }
+
+        let console_mount = MountSpec {
+            source: Some(pts_path.to_string_lossy().into_owned()),
+            target: "/dev/console".to_string(),
+            fstype: None,
+            bind: true,
+            recurse: false,
+            unshare: false,
+            safe: false,
+            create_mountpoint: false,
+            read_only: false,
+            data: None,
+        };
+        console_mount
+            .mount()
+            .context("failed to bind-mount /dev/console")?;
+
+        // Flag the cases runc does:
+        // - a uid not mapped into our userns (EPERM)
+        // - a read-only /dev
+        let rc = unsafe { libc::fchown(tty_fd, exec_uid as libc::uid_t, u32::MAX as libc::gid_t) };
+        if rc < 0 {
+            let err = Error::last_os_error();
+            match err.raw_os_error() {
+                Some(libc::EPERM) | Some(libc::EROFS) => {
+                    warn!("refusing to chown workload console to uid {exec_uid}: {err}");
+                }
+                _ => bail!("failed to chown workload console to uid {exec_uid}: {err}"),
             }
         }
     }
