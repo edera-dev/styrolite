@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/edera-dev/styrolite/compare/v0.3.3...v0.3.4) - 2026-06-16
+
+### Other
+
+- Merge pull request #150 from bleggett/bleggett/fix-cargo-make-cachemiss
+
 ## [0.3.3](https://github.com/edera-dev/styrolite/compare/v0.3.2...v0.3.3) - 2026-06-16
 
 ### Other
