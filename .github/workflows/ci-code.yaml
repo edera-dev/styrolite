@@ -50,6 +50,13 @@ jobs:
         env:
           CARGO_MAKE_VERSION: ${{ steps.get-version.outputs.cargo_make_version }}
 
+      - name: Save cargo-make binary
+        if: steps.cache-cargo-make.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cargo/bin/cargo-make
+          key: ${{ runner.os }}-cargo-make-${{ steps.get-version.outputs.cargo_make_version }}
+
       - name: Verify cargo-make
         run: cargo make --version
 
