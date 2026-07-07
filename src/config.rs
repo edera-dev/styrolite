@@ -121,6 +121,24 @@ pub struct CreateRequest {
     /// `/proc` will be mounted regardless of whether a mount specification is configured.
     pub mounts: Option<Vec<MountSpec>>,
 
+    /// Paths inside the container to mask so their contents are inaccessible,
+    /// applied after all mounts are in place (so freshly-mounted targets like
+    /// `/proc` are covered) but before pivot. A file target is covered by a
+    /// bind of `/dev/null`; a directory target is covered by an empty
+    /// read-only tmpfs. A target that does not exist is skipped, so the set may
+    /// be a superset not every rootfs/kernel populates. Mirrors the OCI
+    /// runtime-spec `maskedPaths`.
+    #[serde(default)]
+    pub masked_paths: Option<Vec<String>>,
+
+    /// Paths inside the container to make read-only while leaving their
+    /// contents readable, applied alongside `masked_paths`. Each existing
+    /// target is bind-mounted onto itself and recursively remounted read-only.
+    /// A target that does not exist is skipped. Mirrors the OCI runtime-spec
+    /// `readonlyPaths`.
+    #[serde(default)]
+    pub readonly_paths: Option<Vec<String>>,
+
     /// An optional set of resource limits.
     /// If this set is not provided, no cgroups will be configured.
     pub limits: Option<ResourceLimits>,
@@ -181,8 +199,13 @@ impl Capabilities {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Config {
-    Create(CreateRequest),
-    Attach(AttachRequest),
+    // Both variants are boxed so the enum stays pointer-sized: `CreateRequest`
+    // and `AttachRequest` are large (hundreds of bytes each), and boxing only
+    // one would just move clippy's large_enum_variant complaint to the other.
+    // Box<T> serializes transparently, so the internally-tagged wire form is
+    // unchanged.
+    Create(Box<CreateRequest>),
+    Attach(Box<AttachRequest>),
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -225,13 +248,13 @@ pub trait Configurable: Serialize + Validatable {
 
 impl Configurable for CreateRequest {
     fn encapsulate(self) -> Result<Config> {
-        Ok(Config::Create(self))
+        Ok(Config::Create(Box::new(self)))
     }
 }
 
 impl Configurable for AttachRequest {
     fn encapsulate(self) -> Result<Config> {
-        Ok(Config::Attach(self))
+        Ok(Config::Attach(Box::new(self)))
     }
 }
 

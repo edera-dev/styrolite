@@ -316,6 +316,22 @@ impl CreateRequestBuilder {
         self
     }
 
+    pub fn push_masked_path(mut self, path: impl Into<String>) -> CreateRequestBuilder {
+        self.config
+            .masked_paths
+            .get_or_insert_with(Vec::new)
+            .push(path.into());
+        self
+    }
+
+    pub fn push_readonly_path(mut self, path: impl Into<String>) -> CreateRequestBuilder {
+        self.config
+            .readonly_paths
+            .get_or_insert_with(Vec::new)
+            .push(path.into());
+        self
+    }
+
     pub fn push_mutation(mut self, spec: Mutation) -> CreateRequestBuilder {
         if self.config.mutations.is_none() {
             self.config.mutations = vec![].into();

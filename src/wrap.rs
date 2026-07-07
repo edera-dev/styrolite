@@ -477,6 +477,23 @@ impl CreateRequest {
             }
         }
 
+        // Apply OCI-style path hardening after every mount is in place (so
+        // freshly-mounted targets such as /proc are covered) but before pivot,
+        // while /dev/null is still reachable for masking. Targets are resolved
+        // under the new rootfs; missing ones are skipped.
+        if let Some(masked) = &self.masked_paths {
+            for path in masked {
+                crate::mount::mask_path(&rootfs, path)
+                    .map_err(|e| anyhow!("failed to mask {path}: {e}"))?;
+            }
+        }
+        if let Some(readonly) = &self.readonly_paths {
+            for path in readonly {
+                crate::mount::make_readonly(&rootfs, path)
+                    .map_err(|e| anyhow!("failed to make {path} read-only: {e}"))?;
+            }
+        }
+
         newroot
             .pivot()
             .map_err(|e| anyhow!("failed to pivot to new rootfs: {e}"))?;

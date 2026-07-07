@@ -110,6 +110,95 @@ pub fn mount_setattr_fd(fd: &OwnedFd, recursive: bool, attr: &libc::mount_attr) 
     mount_setattr(fd.as_raw_fd(), "", flags, attr)
 }
 
+/// Join a container-absolute `path` under `rootfs`, avoiding a doubled
+/// separator. `path` is treated as rooted at the container's `/`.
+fn join_rootfs(rootfs: &str, path: &str) -> String {
+    format!(
+        "{}/{}",
+        rootfs.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
+}
+
+/// Mask a single container path (OCI `maskedPaths` semantics): cover a file
+/// target with a bind of `/dev/null` (reads return EOF, writes are discarded)
+/// and a directory target with an empty read-only tmpfs. `path` is resolved
+/// under `rootfs`. A target that does not exist is skipped -- the default mask
+/// set is a superset that not every rootfs/kernel populates.
+///
+/// Must be called before pivot, while the original `/dev/null` is still
+/// reachable at its normal path.
+pub fn mask_path(rootfs: &str, path: &str) -> Result<()> {
+    let target = join_rootfs(rootfs, path);
+    let meta = match fs::symlink_metadata(&target) {
+        Ok(m) => m,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(anyhow!("stat {target}: {e}")),
+    };
+
+    let spec = if meta.is_dir() {
+        // Empty read-only tmpfs over the directory (nosuid/nodev/noexec).
+        MountSpec {
+            source: Some("tmpfs".to_string()),
+            target,
+            fstype: Some("tmpfs".to_string()),
+            bind: false,
+            recurse: false,
+            unshare: false,
+            safe: true,
+            create_mountpoint: false,
+            read_only: true,
+            data: Some("size=0k".to_string()),
+        }
+    } else {
+        // Bind /dev/null over the file. Not marked read-only or `safe`: the
+        // mask is the bind to /dev/null itself, and MOUNT_ATTR_NODEV would
+        // stop it from behaving as the device node it now is.
+        MountSpec {
+            source: Some("/dev/null".to_string()),
+            target,
+            fstype: None,
+            bind: true,
+            recurse: false,
+            unshare: false,
+            safe: false,
+            create_mountpoint: false,
+            read_only: false,
+            data: None,
+        }
+    };
+
+    spec.mount()
+}
+
+/// Make a single container path read-only (OCI `readonlyPaths` semantics)
+/// while leaving its contents readable: bind the target onto itself and
+/// recursively remount read-only. `path` is resolved under `rootfs`; a target
+/// that does not exist is skipped.
+pub fn make_readonly(rootfs: &str, path: &str) -> Result<()> {
+    let target = join_rootfs(rootfs, path);
+    match fs::symlink_metadata(&target) {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(anyhow!("stat {target}: {e}")),
+    }
+
+    let spec = MountSpec {
+        source: Some(target.clone()),
+        target,
+        fstype: Some("none".to_string()),
+        bind: true,
+        recurse: true,
+        unshare: false,
+        safe: false,
+        create_mountpoint: false,
+        read_only: true,
+        data: None,
+    };
+
+    spec.mount()
+}
+
 impl Mountable for MountSpec {
     fn seal(&self) -> Result<()> {
         let tree = open_tree(
@@ -252,5 +341,25 @@ impl Mountable for MountSpec {
         env::set_current_dir("/")?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_rootfs;
+
+    #[test]
+    fn join_rootfs_avoids_double_separators() {
+        assert_eq!(
+            join_rootfs("/run/root", "/proc/kcore"),
+            "/run/root/proc/kcore"
+        );
+        // Trailing slash on rootfs and missing leading slash on path.
+        assert_eq!(join_rootfs("/run/root/", "proc/sys"), "/run/root/proc/sys");
+        // rootfs of "/" stays single-separator.
+        assert_eq!(
+            join_rootfs("/", "/proc/sysrq-trigger"),
+            "/proc/sysrq-trigger"
+        );
     }
 }
