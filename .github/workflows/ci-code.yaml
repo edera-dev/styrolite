@@ -38,7 +38,7 @@ jobs:
 
       - name: Cache cargo-make binary
         id: cache-cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ steps.get-version.outputs.cargo_make_version }}
@@ -52,7 +52,7 @@ jobs:
 
       - name: Save cargo-make binary
         if: steps.cache-cargo-make.outputs.cache-hit != 'true'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ steps.get-version.outputs.cargo_make_version }}
@@ -71,13 +71,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
@@ -96,13 +96,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
@@ -127,13 +127,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
@@ -159,13 +159,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
@@ -191,13 +191,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
@@ -222,13 +222,13 @@ jobs:
           egress-policy: audit
 
       - name: checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
           persist-credentials: false
 
       - name: Restore cached cargo-make
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-make
           key: ${{ runner.os }}-cargo-make-${{ needs.setup-cargo-make.outputs.cargo_make_version }}
