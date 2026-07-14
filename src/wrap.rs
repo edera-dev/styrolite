@@ -720,6 +720,11 @@ impl ExecutableSpec {
             unsafe { filter.install()? };
         }
 
+        // The Rust runtime ignores SIGPIPE (SIG_IGN) process-wide, and that
+        // disposition is inherited across execve. Restore SIG_DFL so the
+        // workload sees the standard broken-pipe behaviour, matching runc/crun.
+        signal::reset_sigpipe()?;
+
         unsafe {
             if libc::execvpe(
                 program_cstring.as_ptr(),

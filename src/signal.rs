@@ -70,9 +70,60 @@ pub unsafe fn reset_child_signal_handlers() -> Result<()> {
     Ok(())
 }
 
+/// reset_sigpipe restores the SIGPIPE disposition to its default (SIG_DFL)
+/// before handing off to the workload via execve.
+///
+/// The Rust runtime installs SIG_IGN for SIGPIPE at startup, and that
+/// disposition is inherited across execve. Left ignored, workloads that expect
+/// the default behaviour (e.g. shell pipelines terminating on a broken pipe)
+/// wedge instead of being killed by SIGPIPE. runc and crun reset SIGPIPE to
+/// SIG_DFL before exec for the same reason.
+pub fn reset_sigpipe() -> Result<()> {
+    debug!("Resetting SIGPIPE to default handler before exec");
+    unsafe {
+        signal::signal(Signal::SIGPIPE, SigHandler::SigDfl)
+            .map_err(|e| anyhow!("Failed to reset SIGPIPE handler: {}", e))?;
+    }
+    Ok(())
+}
+
 /// store_child_pid stores a pid in the static variable which is used by the signal handler to
 /// forward signals.
 pub fn store_child_pid(pid: i32) {
     debug!("Registering child PID {pid} for signal forwarding");
     unsafe { CHILD_PID = pid }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// reset_sigpipe must restore SIGPIPE to SIG_DFL even when it starts out
+    /// ignored (as the Rust runtime leaves it at startup), so workloads exec'd
+    /// by styrolite see the standard broken-pipe behaviour.
+    ///
+    /// Signal dispositions are process-global; this test seeds and then
+    /// restores SIGPIPE so it does not perturb other tests in the process.
+    #[test]
+    fn test_reset_sigpipe_restores_default() {
+        // Seed the ignored disposition that the Rust runtime installs, and
+        // remember whatever the process started with so we can restore it.
+        let original = unsafe { signal::signal(Signal::SIGPIPE, SigHandler::SigIgn) }
+            .expect("failed to seed SIGPIPE with SIG_IGN");
+
+        reset_sigpipe().expect("reset_sigpipe failed");
+
+        // signal() returns the previous disposition, so this both reads back
+        // the state left by reset_sigpipe() and is idempotent (SIG_DFL again).
+        let after = unsafe { signal::signal(Signal::SIGPIPE, SigHandler::SigDfl) }
+            .expect("failed to read back SIGPIPE disposition");
+        assert!(
+            matches!(after, SigHandler::SigDfl),
+            "SIGPIPE should be SIG_DFL after reset_sigpipe(), got {after:?}"
+        );
+
+        // Restore the disposition the test process started with.
+        unsafe { signal::signal(Signal::SIGPIPE, original) }
+            .expect("failed to restore original SIGPIPE disposition");
+    }
 }
