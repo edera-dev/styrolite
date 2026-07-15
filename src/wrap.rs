@@ -53,7 +53,10 @@ fn set_process_limit(resource: RLimit, limit: Option<u64>) -> Result<()> {
 
     unsafe {
         if libc::setrlimit(resource, &rlimit) == -1 {
-            Err(anyhow!("failed to set resource limit"))
+            Err(anyhow!(
+                "failed to set resource limit {resource}: {}",
+                Error::last_os_error()
+            ))
         } else {
             Ok(())
         }
