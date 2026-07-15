@@ -684,7 +684,7 @@ impl ExecutableSpec {
         let executable = self
             .executable
             .clone()
-            .expect("expected executable to be configured");
+            .ok_or_else(|| anyhow!("no executable configured for the workload to run"))?;
 
         let program_cstring = CString::new(executable)?;
         let mut args_cstrings: Vec<_> = if let Some(args) = &self.arguments {
