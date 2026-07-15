@@ -220,20 +220,22 @@ impl CreateRequest {
     }
 
     fn update_hostname(&self) -> Result<()> {
-        let wid = self
-            .identity()
-            .expect("unable to determine a workload identity");
+        let wid = self.identity()?;
         let final_hostname = match &self.hostname {
             Some(hostname) => hostname.to_string(),
             None => format!("styrolite-{wid}"),
         };
-        let final_hostname_cstr =
-            CString::new(final_hostname).expect("unable to parse hostname as valid C string");
+        let final_hostname_cstr = CString::new(final_hostname.clone()).map_err(|e| {
+            anyhow!("hostname '{final_hostname}' contains an interior NUL byte: {e}")
+        })?;
         let final_hostname_ptr = final_hostname_cstr.as_ptr();
 
         unsafe {
             if libc::sethostname(final_hostname_ptr, final_hostname_cstr.count_bytes()) < 0 {
-                Err(anyhow!("failed to set hostname"))
+                Err(anyhow!(
+                    "failed to set hostname to '{final_hostname}': {}",
+                    Error::last_os_error()
+                ))
             } else {
                 Ok(())
             }
