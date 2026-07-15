@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use styrolite::config::{IdMapping, MountSpec as StyroMountSpec};
 use styrolite::namespace::Namespace;
@@ -207,5 +207,10 @@ fn main() -> Result<()> {
     let runner = Runner::new(&cli.styrolite_bin);
     runner.exec(req)?;
 
-    Err(anyhow!("styrolite exec failed"))
+    // exec() replaces this process image on success and returns Err on
+    // failure (propagated above), so reaching here is never expected.
+    bail!(
+        "styrolite runner '{}' returned without exec'ing the workload",
+        cli.styrolite_bin
+    )
 }
