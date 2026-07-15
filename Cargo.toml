@@ -23,7 +23,7 @@ tokio = { version = "1.52.3", optional = true }
 tempfile = "3"
 
 [features]
-async = ["dep:tokio"]
+async = ["dep:tokio", "tokio/process"]
 
 [lib]
 name = "styrolite"
