@@ -330,11 +330,11 @@ impl Mountable for MountSpec {
 
         unsafe {
             if libc::syscall(libc::SYS_pivot_root, dot_p, dot_p) < 0 {
-                bail!("unable to pivot root");
+                bail!("failed to pivot_root: {}", io::Error::last_os_error());
             }
 
             if libc::umount2(dot_p, libc::MNT_DETACH) < 0 {
-                bail!("unable to unmount old root");
+                bail!("failed to unmount old root: {}", io::Error::last_os_error());
             }
         }
 
