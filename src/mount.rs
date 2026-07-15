@@ -270,7 +270,12 @@ impl Mountable for MountSpec {
         let data_cstr = self
             .data
             .as_ref()
-            .map(|d| CString::new(d.as_str()).unwrap());
+            .map(|d| {
+                CString::new(d.as_str()).map_err(|e| {
+                    anyhow!("mount data '{d}' for {} contains an interior NUL byte: {e}", self.target)
+                })
+            })
+            .transpose()?;
         let data_ptr = data_cstr
             .as_ref()
             .map(|c| c.as_ptr() as *const libc::c_void)
