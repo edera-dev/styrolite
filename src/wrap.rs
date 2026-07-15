@@ -732,7 +732,29 @@ impl ExecutableSpec {
                 env_charptrs.as_ptr(),
             ) < 0
             {
-                Err(anyhow!("execvpe failed"))
+                // execvpe only returns on failure. Capture errno immediately
+                // (before any other libc call can clobber it) and translate it
+                // into an actionable message. "execvpe failed" with no detail
+                // has repeatedly sent people looking in the wrong place.
+                let err = Error::last_os_error();
+                let program = program_cstring.to_string_lossy();
+                let hint = match err.raw_os_error() {
+                    Some(libc::ENOENT) => format!(
+                        " (is '{program}' installed and on PATH? if you meant to \
+                         pass it as an argument, check the order of the executable \
+                         and its arguments)"
+                    ),
+                    Some(libc::EACCES) => {
+                        format!(" (is '{program}' marked executable, and are all \
+                                 leading path components accessible?)")
+                    }
+                    Some(libc::ENOEXEC) => format!(
+                        " (is '{program}' a valid executable for this architecture, \
+                         or is it a script missing a #! interpreter line?)"
+                    ),
+                    _ => String::new(),
+                };
+                Err(anyhow!("failed to execute '{program}': {err}{hint}"))
             } else {
                 Ok(())
             }
