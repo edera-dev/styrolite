@@ -750,8 +750,10 @@ impl ExecutableSpec {
                          and its arguments)"
                     ),
                     Some(libc::EACCES) => {
-                        format!(" (is '{program}' marked executable, and are all \
-                                 leading path components accessible?)")
+                        format!(
+                            " (is '{program}' marked executable, and are all \
+                                 leading path components accessible?)"
+                        )
                     }
                     Some(libc::ENOEXEC) => format!(
                         " (is '{program}' a valid executable for this architecture, \

@@ -272,7 +272,10 @@ impl Mountable for MountSpec {
             .as_ref()
             .map(|d| {
                 CString::new(d.as_str()).map_err(|e| {
-                    anyhow!("mount data '{d}' for {} contains an interior NUL byte: {e}", self.target)
+                    anyhow!(
+                        "mount data '{d}' for {} contains an interior NUL byte: {e}",
+                        self.target
+                    )
                 })
             })
             .transpose()?;
