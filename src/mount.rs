@@ -270,7 +270,15 @@ impl Mountable for MountSpec {
         let data_cstr = self
             .data
             .as_ref()
-            .map(|d| CString::new(d.as_str()).unwrap());
+            .map(|d| {
+                CString::new(d.as_str()).map_err(|e| {
+                    anyhow!(
+                        "mount data '{d}' for {} contains an interior NUL byte: {e}",
+                        self.target
+                    )
+                })
+            })
+            .transpose()?;
         let data_ptr = data_cstr
             .as_ref()
             .map(|c| c.as_ptr() as *const libc::c_void)
@@ -330,11 +338,11 @@ impl Mountable for MountSpec {
 
         unsafe {
             if libc::syscall(libc::SYS_pivot_root, dot_p, dot_p) < 0 {
-                bail!("unable to pivot root");
+                bail!("failed to pivot_root: {}", io::Error::last_os_error());
             }
 
             if libc::umount2(dot_p, libc::MNT_DETACH) < 0 {
-                bail!("unable to unmount old root");
+                bail!("failed to unmount old root: {}", io::Error::last_os_error());
             }
         }
 

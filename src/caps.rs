@@ -325,7 +325,7 @@ pub struct CapResult {
 fn capget(result: &mut CapInternalResult) -> anyhow::Result<()> {
     unsafe {
         if syscall(libc::SYS_capget, &result.header, &result.data) < 0 {
-            Err(anyhow!("capget(2) failed"))
+            Err(anyhow!("capget(2) failed: {}", io::Error::last_os_error()))
         } else {
             Ok(())
         }
@@ -334,8 +334,8 @@ fn capget(result: &mut CapInternalResult) -> anyhow::Result<()> {
 
 fn capset(result: &CapInternalResult) -> anyhow::Result<()> {
     unsafe {
-        let err = syscall(libc::SYS_capset, &result.header, &result.data);
-        if err < 0 {
+        if syscall(libc::SYS_capset, &result.header, &result.data) < 0 {
+            let os_err = io::Error::last_os_error();
             let effective =
                 ((result.data[0].effective as u64) << 32) | result.data[1].effective as u64;
             let permitted =
@@ -344,10 +344,8 @@ fn capset(result: &CapInternalResult) -> anyhow::Result<()> {
                 ((result.data[0].inheritable as u64) << 32) | result.data[1].inheritable as u64;
 
             Err(anyhow!(
-                "capset(2) failed: {:x} {:x} {:x} (error = {err})",
-                effective,
-                permitted,
-                inheritable
+                "capset(2) failed (effective={effective:x} permitted={permitted:x} \
+                 inheritable={inheritable:x}): {os_err}"
             ))
         } else {
             Ok(())

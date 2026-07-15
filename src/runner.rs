@@ -430,7 +430,10 @@ impl Runner {
             return Ok(code);
         }
 
-        Err(anyhow!("failed to launch/monitor child process"))
+        Err(anyhow!(
+            "styrolite runner '{}' did not exit normally: {status}",
+            self.executable
+        ))
     }
 
     #[cfg(feature = "async")]
@@ -443,7 +446,10 @@ impl Runner {
             return Ok(code);
         }
 
-        Err(anyhow!("failed to launch/monitor child process"))
+        Err(anyhow!(
+            "styrolite runner '{}' did not exit normally: {status}",
+            self.executable
+        ))
     }
 
     /// Replace the current process with the styrolite runner directly.
@@ -459,7 +465,10 @@ impl Runner {
         // That means config_file won't be dropped, so a drop-based cleanup won't happen.
         // If TempFile is delete-on-drop, the file may be left behind.
         let err = command.exec(); // only returns on failure
-        Err(anyhow!(err))
+        Err(anyhow!(
+            "failed to exec styrolite runner '{}': {err}",
+            self.executable
+        ))
     }
 
     #[cfg(not(unix))]
