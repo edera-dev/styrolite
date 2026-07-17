@@ -1,3 +1,4 @@
+pub mod apparmor;
 pub mod caps;
 pub mod cgroup;
 pub mod config;

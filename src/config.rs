@@ -86,6 +86,12 @@ pub struct ExecutableSpec {
     #[serde(default)]
     pub seccomp: Option<SeccompFilter>,
 
+    /// An optional AppArmor profile name to transition to on `execve`. The named
+    /// profile must already be loaded in the kernel. Staged after
+    /// `PR_SET_NO_NEW_PRIVS`, before `execvpe()`.
+    #[serde(default)]
+    pub apparmor: Option<String>,
+
     /// An optional out-of-memory score adjustment value.
     pub oom_score_adj: Option<i32>,
 }
