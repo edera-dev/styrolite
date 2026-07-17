@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/edera-dev/styrolite/compare/v0.4.0...v0.4.1) - 2026-07-17
+
+### Added
+
+- *(apparmor)* add support for optionally specifying a loaded apparmor profile to use for a process
+
+### Fixed
+
+- *(build)* enable tokio process feature for the async feature
+- *(styrojail)* clarify the unreachable post-exec error
+- *(styrolite)* replace entrypoint panics with actionable errors
+- *(mount)* return an error on invalid mount data instead of panicking
+- *(mount)* include errno in pivot_root and umount failures
+- *(runner)* surface how the styrolite runner failed
+- *(caps)* include errno in capget and capset failures
+- *(wrap)* return an error when no executable is configured
+- *(wrap)* report errno and reject invalid hostnames
+- *(wrap)* include errno when setting resource limits fails
+- *(exec)* report errno and hints when execvpe fails
+
+### Other
+
+- run cargo fmt
+
 ## [0.4.0](https://github.com/edera-dev/styrolite/compare/v0.3.3...v0.4.0) - 2026-07-07
 
 ### Added
