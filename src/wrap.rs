@@ -725,6 +725,11 @@ impl ExecutableSpec {
             unsafe { filter.install()? };
         }
 
+        if let Some(profile) = &self.apparmor {
+            crate::apparmor::change_onexec(profile)
+                .map_err(|e| anyhow!("failed to set AppArmor profile {profile:?}: {e}"))?;
+        }
+
         // The Rust runtime ignores SIGPIPE (SIG_IGN) process-wide, and that
         // disposition is inherited across execve. Restore SIG_DFL so the
         // workload sees the standard broken-pipe behaviour, matching runc/crun.
