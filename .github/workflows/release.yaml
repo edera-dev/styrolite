@@ -21,7 +21,7 @@ jobs:
       id-token: write # Needed for trusted publishing
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -42,7 +42,7 @@ jobs:
           private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
 
       - name: Run release-plz
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5
+        uses: release-plz/action@18641b6c63063cc5ff8786ebf69cd57e8541bae1 # v0.5
         with:
           command: release
         env:
@@ -62,7 +62,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -83,7 +83,7 @@ jobs:
           private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
 
       - name: Run release-plz
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5
+        uses: release-plz/action@18641b6c63063cc5ff8786ebf69cd57e8541bae1 # v0.5
         with:
           command: release-pr
         env:
