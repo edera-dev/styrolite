@@ -40,6 +40,9 @@ jobs:
         with:
           app-id: "${{ secrets.EDERA_CULTIVATION_APP_ID }}"
           private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
+          # Scope to what release-plz's `release` command needs: create tags
+          # and GitHub releases.
+          permission-contents: write
 
       - name: Run release-plz
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5
@@ -81,6 +84,10 @@ jobs:
         with:
           app-id: "${{ secrets.EDERA_CULTIVATION_APP_ID }}"
           private-key: "${{ secrets.EDERA_CULTIVATION_APP_PRIVATE_KEY }}"
+          # Scope to what release-plz's `release-pr` command needs: push the
+          # release branch (contents) and open/update the PR (pull-requests).
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Run release-plz
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5
