@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::raw::{c_int, c_uint};
+use std::os::unix::fs::OpenOptionsExt;
 use std::ptr;
 
 use anyhow::{Result, anyhow, bail};
@@ -12,6 +13,7 @@ use libc;
 use crate::config::{MountSpec, Mountable};
 
 const MOVE_MOUNT_F_EMPTY_PATH: c_uint = 0x4;
+const MOVE_MOUNT_T_EMPTY_PATH: c_uint = 0x40;
 
 /// open_tree(2)
 pub fn open_tree(dfd: c_int, path: &str, flags: c_uint) -> io::Result<OwnedFd> {
@@ -110,14 +112,34 @@ pub fn mount_setattr_fd(fd: &OwnedFd, recursive: bool, attr: &libc::mount_attr) 
     mount_setattr(fd.as_raw_fd(), "", flags, attr)
 }
 
-/// Join a container-absolute `path` under `rootfs`, avoiding a doubled
-/// separator. `path` is treated as rooted at the container's `/`.
-fn join_rootfs(rootfs: &str, path: &str) -> String {
-    format!(
-        "{}/{}",
-        rootfs.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    )
+/// Open a container-absolute `path` as an `O_PATH` descriptor, resolving it and
+/// every symlink along it with `rootfs` as `/`, so an absolute symlink in the
+/// rootfs cannot lead outside it.
+fn open_in_rootfs(rootfs: &str, path: &str) -> io::Result<fs::File> {
+    let root = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_PATH | libc::O_DIRECTORY)
+        .open(rootfs)?;
+    let c_path = CString::new(path)?;
+    let mut how: libc::open_how = unsafe { std::mem::zeroed() };
+    how.flags = (libc::O_PATH | libc::O_CLOEXEC) as u64;
+    how.resolve = libc::RESOLVE_IN_ROOT;
+
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_openat2,
+            root.as_raw_fd(),
+            c_path.as_ptr(),
+            &how as *const libc::open_how,
+            std::mem::size_of::<libc::open_how>(),
+        )
+    };
+
+    if ret < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(unsafe { fs::File::from_raw_fd(ret as c_int) })
 }
 
 /// Mask a single container path (OCI `maskedPaths` semantics): cover a file
@@ -129,46 +151,55 @@ fn join_rootfs(rootfs: &str, path: &str) -> String {
 /// Must be called before pivot, while the original `/dev/null` is still
 /// reachable at its normal path.
 pub fn mask_path(rootfs: &str, path: &str) -> Result<()> {
-    let target = join_rootfs(rootfs, path);
-    let meta = match fs::symlink_metadata(&target) {
-        Ok(m) => m,
+    let target = match open_in_rootfs(rootfs, path) {
+        Ok(target) => target,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(anyhow!("stat {target}: {e}")),
+        Err(e) => return Err(anyhow!("resolve {path} under {rootfs}: {e}")),
     };
+    let meta = target.metadata().map_err(|e| anyhow!("stat {path}: {e}"))?;
 
-    let spec = if meta.is_dir() {
+    if meta.is_dir() {
         // Empty read-only tmpfs over the directory (nosuid/nodev/noexec).
-        MountSpec {
-            source: Some("tmpfs".to_string()),
-            target,
-            fstype: Some("tmpfs".to_string()),
-            bind: false,
-            recurse: false,
-            unshare: false,
-            safe: true,
-            create_mountpoint: false,
-            read_only: true,
-            data: Some("size=0k".to_string()),
+        // mount(2) takes no target descriptor, so it reaches the resolved
+        // directory through procfs.
+        let target_path = CString::new(format!("/proc/self/fd/{}", target.as_raw_fd()))?;
+        let rc = unsafe {
+            libc::mount(
+                c"tmpfs".as_ptr(),
+                target_path.as_ptr(),
+                c"tmpfs".as_ptr(),
+                libc::MS_SILENT
+                    | libc::MS_RDONLY
+                    | libc::MS_NOSUID
+                    | libc::MS_NODEV
+                    | libc::MS_NOEXEC,
+                c"size=0k".as_ptr() as *const libc::c_void,
+            )
+        };
+        if rc < 0 {
+            bail!("mount tmpfs over {path}: {}", io::Error::last_os_error());
         }
     } else {
-        // Bind /dev/null over the file. Not marked read-only or `safe`: the
-        // mask is the bind to /dev/null itself, and MOUNT_ATTR_NODEV would
-        // stop it from behaving as the device node it now is.
-        MountSpec {
-            source: Some("/dev/null".to_string()),
-            target,
-            fstype: None,
-            bind: true,
-            recurse: false,
-            unshare: false,
-            safe: false,
-            create_mountpoint: false,
-            read_only: false,
-            data: None,
-        }
-    };
+        // Bind /dev/null over the file, with no mount attributes: the mask is
+        // the bind to /dev/null itself, and MOUNT_ATTR_NODEV would stop it
+        // from behaving as the device node it now is.
+        let null = open_tree(
+            libc::AT_FDCWD,
+            "/dev/null",
+            libc::OPEN_TREE_CLONE | libc::OPEN_TREE_CLOEXEC,
+        )
+        .map_err(|e| anyhow!("clone /dev/null: {e}"))?;
+        move_mount(
+            null.as_raw_fd(),
+            "",
+            target.as_raw_fd(),
+            "",
+            MOVE_MOUNT_F_EMPTY_PATH | MOVE_MOUNT_T_EMPTY_PATH,
+        )
+        .map_err(|e| anyhow!("bind /dev/null over {path}: {e}"))?;
+    }
 
-    spec.mount()
+    Ok(())
 }
 
 /// Make a single container path read-only (OCI `readonlyPaths` semantics)
@@ -176,27 +207,36 @@ pub fn mask_path(rootfs: &str, path: &str) -> Result<()> {
 /// recursively remount read-only. `path` is resolved under `rootfs`; a target
 /// that does not exist is skipped.
 pub fn make_readonly(rootfs: &str, path: &str) -> Result<()> {
-    let target = join_rootfs(rootfs, path);
-    match fs::symlink_metadata(&target) {
-        Ok(_) => {}
+    let target = match open_in_rootfs(rootfs, path) {
+        Ok(target) => target,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(anyhow!("stat {target}: {e}")),
-    }
-
-    let spec = MountSpec {
-        source: Some(target.clone()),
-        target,
-        fstype: Some("none".to_string()),
-        bind: true,
-        recurse: true,
-        unshare: false,
-        safe: false,
-        create_mountpoint: false,
-        read_only: true,
-        data: None,
+        Err(e) => return Err(anyhow!("resolve {path} under {rootfs}: {e}")),
     };
 
-    spec.mount()
+    let tree = open_tree(
+        target.as_raw_fd(),
+        "",
+        libc::OPEN_TREE_CLONE
+            | libc::OPEN_TREE_CLOEXEC
+            | libc::AT_RECURSIVE as c_uint
+            | libc::AT_EMPTY_PATH as c_uint,
+    )
+    .map_err(|e| anyhow!("clone the mount at {path}: {e}"))?;
+
+    let mut attr: libc::mount_attr = unsafe { std::mem::zeroed() };
+    attr.attr_set = libc::MOUNT_ATTR_RDONLY;
+    mount_setattr_fd(&tree, true, &attr).map_err(|e| anyhow!("make {path} read-only: {e}"))?;
+
+    move_mount(
+        tree.as_raw_fd(),
+        "",
+        target.as_raw_fd(),
+        "",
+        MOVE_MOUNT_F_EMPTY_PATH | MOVE_MOUNT_T_EMPTY_PATH,
+    )
+    .map_err(|e| anyhow!("bind {path} read-only over itself: {e}"))?;
+
+    Ok(())
 }
 
 impl Mountable for MountSpec {
@@ -354,20 +394,47 @@ impl Mountable for MountSpec {
 
 #[cfg(test)]
 mod tests {
-    use super::join_rootfs;
+    use super::open_in_rootfs;
+    use std::fs;
+    use std::io;
+    use std::os::unix::fs::{MetadataExt, symlink};
 
     #[test]
-    fn join_rootfs_avoids_double_separators() {
+    fn an_absolute_symlink_resolves_inside_the_rootfs() {
+        let rootfs = tempfile::tempdir().unwrap();
+        fs::create_dir_all(rootfs.path().join("usr/bin")).unwrap();
+        fs::write(rootfs.path().join("usr/bin/ls"), "").unwrap();
+        symlink("/usr/bin", rootfs.path().join("bin")).unwrap();
+
+        let resolved = open_in_rootfs(rootfs.path().to_str().unwrap(), "/bin/ls")
+            .unwrap()
+            .metadata()
+            .unwrap();
+        let inside = fs::metadata(rootfs.path().join("usr/bin/ls")).unwrap();
         assert_eq!(
-            join_rootfs("/run/root", "/proc/kcore"),
-            "/run/root/proc/kcore"
+            (resolved.dev(), resolved.ino()),
+            (inside.dev(), inside.ino())
         );
-        // Trailing slash on rootfs and missing leading slash on path.
-        assert_eq!(join_rootfs("/run/root/", "proc/sys"), "/run/root/proc/sys");
-        // rootfs of "/" stays single-separator.
-        assert_eq!(
-            join_rootfs("/", "/proc/sysrq-trigger"),
-            "/proc/sysrq-trigger"
-        );
+    }
+
+    #[test]
+    fn a_path_outside_the_rootfs_is_not_found() {
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret"), "").unwrap();
+        let rootfs = tempfile::tempdir().unwrap();
+        symlink(outside.path(), rootfs.path().join("abs")).unwrap();
+        symlink("../../../../../../../..", rootfs.path().join("up")).unwrap();
+        let rootfs = rootfs.path().to_str().unwrap();
+
+        for path in [
+            "/abs/secret".to_string(),
+            format!("/up{}/secret", outside.path().display()),
+        ] {
+            assert_eq!(
+                open_in_rootfs(rootfs, &path).unwrap_err().kind(),
+                io::ErrorKind::NotFound,
+                "{path}"
+            );
+        }
     }
 }
