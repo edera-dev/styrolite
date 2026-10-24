@@ -189,7 +189,7 @@ impl AsRef<str> for CapabilityBit {
             CapabilityBit::IpcLock => "IPC_LOCK",
             CapabilityBit::IpcOwner => "IPC_OWNER",
             CapabilityBit::SysModule => "SYS_MODULE",
-            CapabilityBit::SysRawIO => "SYS_RAW_IO",
+            CapabilityBit::SysRawIO => "SYS_RAWIO",
             CapabilityBit::SysChroot => "SYS_CHROOT",
             CapabilityBit::SysPtrace => "SYS_PTRACE",
             CapabilityBit::SysPacct => "SYS_PACCT",
