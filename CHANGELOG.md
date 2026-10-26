@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4](https://github.com/edera-dev/styrolite/compare/v0.4.3...v0.4.4) - 2026-10-26
+
+### Fixed
+
+- *(caps)* use correct name for SYS_RAWIO
+- *(mount)* resolve every symlink inside container rootfs
+
 ## [0.4.3](https://github.com/edera-dev/styrolite/compare/v0.4.2...v0.4.3) - 2026-08-25
 
 ### Fixed
