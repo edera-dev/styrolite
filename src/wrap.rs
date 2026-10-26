@@ -1,9 +1,9 @@
 use std::env;
 use std::ffi::CString;
 use std::fs;
-use std::io::Error;
+use std::io::{Error, Write};
 use std::mem::MaybeUninit;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::process;
 use std::ptr;
 
@@ -535,7 +535,12 @@ impl Wrappable for CreateRequest {
             "maybe create a new supervisor cgroup for workload identity {}",
             self.identity()?
         );
+        // A cgroup the caller named is a boundary it relies on, so failing to join it fails
+        // the launch.
         if let Err(e) = self.prepare_cgroup() {
+            if self.cgroupfs.is_some() {
+                return Err(e.context("unable to join the named cgroup"));
+            }
             warn!("unable to prepare cgroup: {e}");
         }
 
@@ -891,24 +896,67 @@ impl AttachRequest {
             .filter(|named| named.exists()))
     }
 
-    fn attach_cgroup(&self) -> Result<()> {
-        let pid = process::id();
+    /// Moves this process into the attach target. If that fails, it joins the cgroup that
+    /// `target_pid` is in, as runc's exec does, so a caller that relies on the target as a
+    /// boundary must keep `target_pid` inside it (for example with a cgroup namespace and
+    /// `nsdelegate`).
+    fn attach_cgroup(&self, target_pid: libc::pid_t) -> Result<()> {
+        let pid = process::id().to_string();
         let Some(target) = self.attach_cgroup_target()? else {
             debug!("no cgroup named for this attachment");
             return Ok(());
         };
+        // Without O_CREAT, a path that is not a cgroup fails instead of gaining a plain file.
+        let join = |cgroup: &Path| -> std::io::Result<()> {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(cgroup.join("cgroup.procs"))?
+                .write_all(pid.as_bytes())
+        };
 
-        let path_str = target
-            .to_str()
-            .ok_or(anyhow!("path is somehow not valid utf-8"))?;
-        let cgroup = CGroup::open(path_str)?;
+        debug!("binding pid {pid} to cgroup {}", target.display());
+        let Err(err) = join(&target) else {
+            return Ok(());
+        };
 
-        debug!("binding pid {pid} to cgroup {path_str}");
-        cgroup
-            .clone()
-            .set_child_value("cgroup.procs", &format!("{pid}"))?;
-
-        Ok(())
+        // The target refuses processes (EBUSY) once it has controllers enabled for its
+        // children, and the target's processes may have moved to another cgroup.
+        if !Path::new("/sys/fs/cgroup/cgroup.controllers").exists() {
+            bail!(
+                "joining cgroup {}: {err} (no fallback: /sys/fs/cgroup is not a cgroup v2 mount)",
+                target.display()
+            );
+        }
+        // The path is relative to this process's cgroup namespace. A target outside it reads
+        // as /../.., which would resolve outside /sys/fs/cgroup.
+        let init_cgroup = fs::read_to_string(format!("/proc/{target_pid}/cgroup"))
+            .ok()
+            .and_then(|cgroups| {
+                cgroups
+                    .lines()
+                    .find_map(|line| line.strip_prefix("0::"))
+                    .map(|path| PathBuf::from(path.trim_start_matches('/')))
+            })
+            .filter(|path| path.components().all(|c| matches!(c, Component::Normal(_))))
+            .map(|path| Path::new("/sys/fs/cgroup").join(path))
+            .ok_or_else(|| {
+                anyhow!(
+                    "joining cgroup {}: {err} (no fallback: no cgroup of pid {target_pid} under /sys/fs/cgroup)",
+                    target.display()
+                )
+            })?;
+        warn!(
+            "joining cgroup {} failed ({err}), binding pid {pid} to {}, the cgroup of pid {target_pid}",
+            target.display(),
+            init_cgroup.display()
+        );
+        join(&init_cgroup).with_context(|| {
+            format!(
+                "joining cgroup {} ({err}) and then cgroup {}",
+                target.display(),
+                init_cgroup.display()
+            )
+        })
     }
 }
 
@@ -933,8 +981,13 @@ impl Wrappable for AttachRequest {
             "maybe attach to a pre-existing supervisor cgroup for workload identity {}",
             self.identity()?
         );
-        if self.attach_cgroup().is_err() {
-            warn!("unable to set resource limits, cgroup access denied!");
+        // A cgroup the caller named is a boundary it relies on, so failing to join it fails
+        // the attach.
+        if let Err(e) = self.attach_cgroup(target_pid) {
+            if self.cgroupfs.is_some() {
+                return Err(e.context("unable to join the named cgroup"));
+            }
+            warn!("unable to join the workload cgroup: {e}");
         }
 
         debug!("determined that we want to use the namespaces of host PID {target_pid}");
@@ -1460,6 +1513,37 @@ mod tests {
         };
 
         assert_eq!(request.attach_cgroup_target().expect("target"), None);
+    }
+
+    /// A named cgroup that refuses the process, with no target process to fall back to,
+    /// fails the attach rather than leaving the process outside the cgroup.
+    #[test]
+    fn attach_fails_when_no_cgroup_takes_the_process() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Writing to a directory fails with EISDIR, standing in for an EBUSY cgroup.
+        std::fs::create_dir(dir.path().join("cgroup.procs")).expect("procs dir");
+        let request = AttachRequest {
+            cgroupfs: Some(dir.path().to_string_lossy().to_string()),
+            workload_id: Some("some-workload".to_string()),
+            ..Default::default()
+        };
+
+        assert!(request.attach_cgroup(libc::pid_t::MAX).is_err());
+    }
+
+    /// A named directory that is not a cgroup fails the attach, and gains no
+    /// `cgroup.procs` file.
+    #[test]
+    fn attach_to_a_directory_that_is_not_a_cgroup_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let request = AttachRequest {
+            cgroupfs: Some(dir.path().to_string_lossy().to_string()),
+            workload_id: Some("some-workload".to_string()),
+            ..Default::default()
+        };
+
+        assert!(request.attach_cgroup(libc::pid_t::MAX).is_err());
+        assert!(!dir.path().join("cgroup.procs").exists());
     }
 
     /// An fd the caller left open without O_CLOEXEC must not reach the workload.
