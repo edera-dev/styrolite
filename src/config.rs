@@ -94,6 +94,12 @@ pub struct ExecutableSpec {
 
     /// An optional out-of-memory score adjustment value.
     pub oom_score_adj: Option<i32>,
+
+    /// How many fds after stdio (3 through 3 + N - 1) stay open across `execvpe()`, like
+    /// runc's `--preserve-fds`. By default, every fd above stdio is closed when `execvpe()`
+    /// succeeds.
+    #[serde(default)]
+    pub preserve_fds: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]

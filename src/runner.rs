@@ -90,6 +90,11 @@ impl AttachRequestBuilder {
         self
     }
 
+    pub fn set_preserve_fds(mut self, preserve_fds: u32) -> AttachRequestBuilder {
+        self.config.exec.preserve_fds = preserve_fds;
+        self
+    }
+
     pub fn push_environment(mut self, key: &str, value: &str) -> AttachRequestBuilder {
         if self.config.exec.environment.is_none() {
             self.config.exec.environment = BTreeMap::new().into();
@@ -218,6 +223,11 @@ impl CreateRequestBuilder {
 
     pub fn set_no_new_privs(mut self, no_new_privs: bool) -> CreateRequestBuilder {
         self.config.exec.no_new_privs = no_new_privs;
+        self
+    }
+
+    pub fn set_preserve_fds(mut self, preserve_fds: u32) -> CreateRequestBuilder {
+        self.config.exec.preserve_fds = preserve_fds;
         self
     }
 
