@@ -714,6 +714,40 @@ impl ExecutableSpec {
             env::set_current_dir(wd.clone())?;
         }
 
+        // Only stdio and the preserved fds may cross execve, so mark every other fd
+        // close-on-exec. This runs before seccomp so that a workload filter cannot refuse
+        // it.
+        let first_cloexec_fd = 3u32.saturating_add(self.preserve_fds);
+        let ret = unsafe {
+            libc::syscall(
+                libc::SYS_close_range,
+                first_cloexec_fd as libc::c_uint,
+                libc::c_uint::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            )
+        };
+        if ret < 0 {
+            let err = Error::last_os_error();
+            // CLOSE_RANGE_CLOEXEC needs Linux 5.11. Older kernels answer ENOSYS, or EINVAL
+            // on 5.9 and 5.10, which have close_range() without the flag.
+            if !matches!(err.raw_os_error(), Some(libc::ENOSYS) | Some(libc::EINVAL)) {
+                bail!("failed to mark inherited fds close-on-exec: {err}");
+            }
+            for entry in
+                fs::read_dir("/proc/self/fd").context("failed to list fds to mark close-on-exec")?
+            {
+                let fd: u32 = entry?.file_name().to_string_lossy().parse()?;
+                if fd >= first_cloexec_fd
+                    && unsafe { libc::fcntl(fd as c_int, libc::F_SETFD, libc::FD_CLOEXEC) } < 0
+                {
+                    bail!(
+                        "failed to mark fd {fd} close-on-exec: {}",
+                        Error::last_os_error()
+                    );
+                }
+            }
+        }
+
         if self.no_new_privs {
             self.set_no_new_privs()?;
         }
@@ -1137,6 +1171,7 @@ mod tests {
     use crate::config::AttachRequest;
     use crate::config::{Capabilities, CreateRequest, ExecutableSpec};
     use crate::namespace::Namespace;
+    use crate::seccomp::SeccompFilter;
     use crate::unshare::unshare;
     use nix::sys::wait::{WaitStatus, waitpid};
     use nix::unistd::{ForkResult, fork, geteuid};
@@ -1425,5 +1460,108 @@ mod tests {
         };
 
         assert_eq!(request.attach_cgroup_target().expect("target"), None);
+    }
+
+    /// An fd the caller left open without O_CLOEXEC must not reach the workload.
+    #[test]
+    fn execute_does_not_leak_inherited_fds() {
+        assert!(unsafe {
+            in_child(|| {
+                let fd = libc::open(c"/dev/null".as_ptr(), libc::O_RDONLY);
+                // dup2() clears FD_CLOEXEC on the new fd.
+                if fd < 0 || libc::dup2(fd, 9) < 0 {
+                    return 1;
+                }
+                let spec = ExecutableSpec {
+                    executable: Some("/bin/sh".to_string()),
+                    arguments: Some(vec![
+                        "-c".to_string(),
+                        "test ! -e /proc/self/fd/9".to_string(),
+                    ]),
+                    ..Default::default()
+                };
+                let _ = spec.execute();
+                2
+            })
+        });
+    }
+
+    /// With `preserve_fds = 1`, fd 3 reaches the workload and fd 9 still does not.
+    #[test]
+    fn execute_keeps_preserved_fds() {
+        assert!(unsafe {
+            in_child(|| {
+                let fd = libc::open(c"/dev/null".as_ptr(), libc::O_RDONLY);
+                if fd < 0 || libc::dup2(fd, 3) < 0 || libc::dup2(fd, 9) < 0 {
+                    return 1;
+                }
+                let spec = ExecutableSpec {
+                    executable: Some("/bin/sh".to_string()),
+                    arguments: Some(vec![
+                        "-c".to_string(),
+                        "test -e /proc/self/fd/3 && test ! -e /proc/self/fd/9".to_string(),
+                    ]),
+                    preserve_fds: 1,
+                    ..Default::default()
+                };
+                let _ = spec.execute();
+                2
+            })
+        });
+    }
+
+    /// A seccomp filter that answers close_range() with ENOSYS stands in for a kernel older
+    /// than 5.9, which forces the /proc/self/fd fallback.
+    #[test]
+    fn execute_marks_fds_without_close_range() {
+        assert!(unsafe {
+            in_child(|| {
+                let fd = libc::open(c"/dev/null".as_ptr(), libc::O_RDONLY);
+                if fd < 0 || libc::dup2(fd, 3) < 0 || libc::dup2(fd, 9) < 0 {
+                    return 1;
+                }
+                if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                    return 2;
+                }
+                let filter = SeccompFilter {
+                    instructions: vec![
+                        // Load seccomp_data.nr.
+                        ((libc::BPF_LD | libc::BPF_W | libc::BPF_ABS) as u16, 0, 0, 0),
+                        (
+                            (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16,
+                            0,
+                            1,
+                            libc::SYS_close_range as u32,
+                        ),
+                        (
+                            (libc::BPF_RET | libc::BPF_K) as u16,
+                            0,
+                            0,
+                            libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32,
+                        ),
+                        (
+                            (libc::BPF_RET | libc::BPF_K) as u16,
+                            0,
+                            0,
+                            libc::SECCOMP_RET_ALLOW,
+                        ),
+                    ],
+                };
+                if filter.install().is_err() {
+                    return 3;
+                }
+                let spec = ExecutableSpec {
+                    executable: Some("/bin/sh".to_string()),
+                    arguments: Some(vec![
+                        "-c".to_string(),
+                        "test -e /proc/self/fd/3 && test ! -e /proc/self/fd/9".to_string(),
+                    ]),
+                    preserve_fds: 1,
+                    ..Default::default()
+                };
+                let _ = spec.execute();
+                4
+            })
+        });
     }
 }

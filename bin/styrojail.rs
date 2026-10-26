@@ -50,6 +50,11 @@ struct Cli {
     #[arg(long, value_name = "key:value", value_parser = parse_resource_limit)]
     limit: Vec<ResourceLimit>,
 
+    /// Pass N fds after stdio (3 through 3 + N - 1) through to the jailed program.
+    /// By default, the jailed program gets no fds besides stdio.
+    #[arg(long, value_name = "N", default_value_t = 0)]
+    preserve_fds: u32,
+
     /// The program being jailed
     #[arg(value_name = "PROGRAM")]
     program: String,
@@ -202,6 +207,8 @@ fn main() -> Result<()> {
     for lim in &cli.limit {
         builder = builder.push_resource_limit(&lim.key, &lim.value);
     }
+
+    builder = builder.set_preserve_fds(cli.preserve_fds);
 
     let req = builder.to_request();
     let runner = Runner::new(&cli.styrolite_bin);
