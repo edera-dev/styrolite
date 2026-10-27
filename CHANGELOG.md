@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/edera-dev/styrolite/compare/v0.4.4...v0.5.0) - 2026-10-26
+
+### Fixed
+
+- *(wrap)* explicitly fail if the declared cgroup cannot be joined
+- *(jail)* explicitly mark all non-stdio fds as close-on-exec
+
 ## [0.4.4](https://github.com/edera-dev/styrolite/compare/v0.4.3...v0.4.4) - 2026-10-26
 
 ### Fixed
