@@ -1124,6 +1124,60 @@ fn setup_console(uid: Option<u32>) -> Result<()> {
     Ok(())
 }
 
+/// Like runc's fixStdioPermissions: give the exec UID ownership of stdio that is neither
+/// /dev/null nor a TTY, so a non-root workload can reopen it by path, such as /dev/stdout.
+fn fix_stdio_ownership(uid: Option<u32>) -> Result<()> {
+    let Some(exec_uid) = uid else {
+        return Ok(());
+    };
+
+    for fd in 0..=2 {
+        // TTYs keep their owner here on both paths: setup_console hands the CreateRequest TTY
+        // to the uid, and an AttachRequest TTY stays root's. Callers such as Protect bind one
+        // devpts into every workload, so a pts given to this uid could be opened by any other
+        // container running as it.
+        if unsafe { libc::isatty(fd) } == 1 {
+            continue;
+        }
+
+        let mut stat = MaybeUninit::<libc::stat>::uninit();
+        if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } < 0 {
+            let err = Error::last_os_error();
+            // A closed fd has nothing to chown.
+            if err.raw_os_error() == Some(libc::EBADF) {
+                continue;
+            }
+            bail!("failed to stat stdio fd {fd}: {err}");
+        }
+        let stat = unsafe { stat.assume_init() };
+
+        // The caller may open /dev/null outside our mount namespace, so match its device
+        // number and not its path.
+        let is_null =
+            stat.st_mode & libc::S_IFMT == libc::S_IFCHR && stat.st_rdev == libc::makedev(1, 3);
+        if stat.st_uid == exec_uid || is_null {
+            continue;
+        }
+
+        // Keep the gid, as runc does. Skip the cases runc skips:
+        // - a uid not mapped into our userns (EINVAL)
+        // - an owner not mapped into our userns (EPERM)
+        // - a read-only /dev (EROFS)
+        let rc = unsafe { libc::fchown(fd, exec_uid as libc::uid_t, u32::MAX as libc::gid_t) };
+        if rc < 0 {
+            let err = Error::last_os_error();
+            match err.raw_os_error() {
+                Some(libc::EINVAL) | Some(libc::EPERM) | Some(libc::EROFS) => {
+                    warn!("refusing to chown stdio fd {fd} to uid {exec_uid}: {err}");
+                }
+                _ => bail!("failed to chown stdio fd {fd} to uid {exec_uid}: {err}"),
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
     let Some(caps) = capabilities else {
         return Ok(());
@@ -1196,14 +1250,16 @@ fn apply_capabilities(capabilities: Option<&Capabilities>) -> Result<()> {
 /// The ordered final prep that runs after namespaces are set up and right
 /// before execve(2). The sequence MUST be:
 ///
-/// 1. `set_keep_caps` (SECBIT_NO_SETUID_FIXUP) so the kernel does not clear
+/// 1. `fix_stdio_ownership`, which needs CAP_CHOWN, so it runs before any drop.
+/// 2. `set_keep_caps` (SECBIT_NO_SETUID_FIXUP) so the kernel does not clear
 ///    the permitted/effective cap sets on a uid 0 <-> non-zero transition.
-/// 2. `apply_gid_uid` to drop primary GID, supplemental GIDs, and UID.
-/// 3. `apply_capabilities` to apply the workload's final cap raises/drops.
+/// 3. `apply_gid_uid` to drop primary GID, supplemental GIDs, and UID.
+/// 4. `apply_capabilities` to apply the workload's final cap raises/drops.
 ///
 /// Both `CreateRequest::wrap` and `AttachRequest::wrap` must run this
 /// sequence.
 fn preexec_prep(exec: &ExecutableSpec, capabilities: Option<&Capabilities>) -> Result<()> {
+    fix_stdio_ownership(exec.uid)?;
     // We need to toggle SECBIT before we change UID/GID,
     // or else changing UID/GID may cause us to lose the capabilities
     // we need to explicitly drop capabilities later on.
@@ -1228,6 +1284,8 @@ mod tests {
     use crate::unshare::unshare;
     use nix::sys::wait::{WaitStatus, waitpid};
     use nix::unistd::{ForkResult, fork, geteuid};
+    use std::mem::MaybeUninit;
+    use std::ptr;
 
     const NOBODY_UID: u32 = 65534;
 
@@ -1414,6 +1472,64 @@ mod tests {
                 }
                 if !CapabilityBit::NetRaw.get_from(now.effective) {
                     return 4;
+                }
+                0
+            })
+        });
+    }
+
+    #[test]
+    fn root_only_stdio_pipes_go_to_the_exec_uid_and_ttys_do_not() {
+        if !is_root() {
+            return;
+        }
+        assert!(unsafe {
+            in_child(|| {
+                let mut fds = [0; 2];
+                if libc::pipe(fds.as_mut_ptr()) < 0 {
+                    return 1;
+                }
+                let (mut pty, mut pts) = (0, 0);
+                if libc::openpty(
+                    &mut pty,
+                    &mut pts,
+                    ptr::null_mut(),
+                    ptr::null(),
+                    ptr::null(),
+                ) < 0
+                {
+                    return 7;
+                }
+                // Replace or close all three, so the call cannot chown the test runner's terminal.
+                if libc::dup2(pts, 0) < 0 || libc::dup2(fds[1], 1) < 0 {
+                    return 2;
+                }
+                libc::close(2);
+                let exec = ExecutableSpec {
+                    uid: Some(NOBODY_UID),
+                    gid: Some(NOBODY_UID),
+                    ..Default::default()
+                };
+                if preexec_prep(&exec, None).is_err() {
+                    return 3;
+                }
+                let mut stat = MaybeUninit::<libc::stat>::uninit();
+                if libc::fstat(1, stat.as_mut_ptr()) < 0 {
+                    return 4;
+                }
+                let stat = stat.assume_init();
+                if stat.st_uid != NOBODY_UID {
+                    return 5;
+                }
+                if stat.st_gid != 0 {
+                    return 6;
+                }
+                let mut stat = MaybeUninit::<libc::stat>::uninit();
+                if libc::fstat(0, stat.as_mut_ptr()) < 0 {
+                    return 8;
+                }
+                if stat.assume_init().st_uid != 0 {
+                    return 9;
                 }
                 0
             })
